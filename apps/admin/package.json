@@ -1,0 +1,12 @@
+{
+  "name": "@jaama/admin",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo \"@jaama/admin is a placeholder for the future admin portal\" && exit 0",
+    "build": "echo \"@jaama/admin build placeholder\" && exit 0",
+    "lint": "echo \"@jaama/admin lint placeholder\" && exit 0",
+    "typecheck": "echo \"@jaama/admin typecheck placeholder\" && exit 0",
+    "test": "echo \"@jaama/admin test placeholder\" && exit 0"
+  }
+}
