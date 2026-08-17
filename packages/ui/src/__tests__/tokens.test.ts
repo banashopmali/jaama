@@ -1,13 +1,23 @@
 import { describe, it, expect } from "vitest";
 import { jaamaTokens } from "../tokens";
 
-describe("@jaama/ui Tokens Contract", () => {
+describe("@jaama/ui Tokens Contract & Drift Protection", () => {
   it("exports official JAAMA brand primary color", () => {
     expect(jaamaTokens.colors.brand.primary).toBe("#002B9A");
   });
 
   it("exports official JAAMA brand primary hover color", () => {
     expect(jaamaTokens.colors.brand.primaryHover).toBe("#00227B");
+  });
+
+  it("exports canonical brand primaryActive color", () => {
+    expect(jaamaTokens.colors.brand.primaryActive).toBe("#001A61");
+  });
+
+  it("exports canonical brand surface subtle states (brandSubtle, brandSubtleHover, brandSubtleActive)", () => {
+    expect(jaamaTokens.colors.surface.brandSubtle).toBe("#F0F4FF");
+    expect(jaamaTokens.colors.surface.brandSubtleHover).toBe("#E0E9FF");
+    expect(jaamaTokens.colors.surface.brandSubtleActive).toBe("#C7D7FE");
   });
 
   it("exports official JAAMA brand navy color", () => {
@@ -28,5 +38,11 @@ describe("@jaama/ui Tokens Contract", () => {
     expect(jaamaTokens.controlHeights.sm).toBe("2.5rem");
     expect(jaamaTokens.controlHeights.md).toBe("2.75rem");
     expect(jaamaTokens.controlHeights.lg).toBe("3rem");
+  });
+
+  it("defines canonical shadow scale", () => {
+    expect(jaamaTokens.shadows.subtle).toBeDefined();
+    expect(jaamaTokens.shadows.card).toBeDefined();
+    expect(jaamaTokens.shadows.elevated).toBeDefined();
   });
 });

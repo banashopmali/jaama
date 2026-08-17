@@ -72,9 +72,9 @@ module.exports = {
         full: "var(--jaama-radius-full, 9999px)",
       },
       boxShadow: {
-        subtle: "0 1px 2px 0 rgba(15, 23, 42, 0.04)",
-        card: "0 1px 3px 0 rgba(15, 23, 42, 0.06), 0 1px 2px -1px rgba(15, 23, 42, 0.06)",
-        elevated: "0 10px 25px -5px rgba(0, 43, 154, 0.08), 0 8px 10px -6px rgba(0, 43, 154, 0.04)",
+        subtle: "var(--jaama-shadow-subtle)",
+        card: "var(--jaama-shadow-card)",
+        elevated: "var(--jaama-shadow-elevated)",
       },
     },
   },

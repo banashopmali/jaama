@@ -3,6 +3,7 @@ export const jaamaTokens = {
     brand: {
       primary: "#002B9A",
       primaryHover: "#00227B",
+      primaryActive: "#001A61",
       navy: "#0B1936",
       surfaceLight: "#F0F4FF",
       borderLight: "#C7D7FE",
@@ -12,6 +13,8 @@ export const jaamaTokens = {
       default: "#FFFFFF",
       subtle: "#F8FAFC",
       brandSubtle: "#F0F4FF",
+      brandSubtleHover: "#E0E9FF",
+      brandSubtleActive: "#C7D7FE",
       hover: "#F1F5F9",
       disabled: "#E2E8F0",
     },
