@@ -26,7 +26,12 @@ jobs:
           version: 11.7.0
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: |
+          pnpm install --frozen-lockfile 2>&1 | tee pnpm-install-error.txt || {
+            echo "=== PNPM INSTALL FAILED WITH ERROR ==="
+            cat pnpm-install-error.txt
+            exit 1
+          }
 
       - name: Run Lint
         run: pnpm lint
