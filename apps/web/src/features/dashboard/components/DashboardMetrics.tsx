@@ -1,5 +1,3 @@
-"use client";
-
 import React from "react";
 import { DollarSign, ShoppingCart, Wallet, AlertTriangle } from "lucide-react";
 import { DashboardSnapshot } from "../dashboard.types";

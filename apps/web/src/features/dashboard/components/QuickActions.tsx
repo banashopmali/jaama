@@ -1,5 +1,3 @@
-"use client";
-
 import React from "react";
 import Link from "next/link";
 import { PlusCircle, PackagePlus, FileText, WalletCards, ArrowUpRight } from "lucide-react";

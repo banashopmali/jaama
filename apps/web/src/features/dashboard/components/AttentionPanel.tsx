@@ -1,5 +1,3 @@
-"use client";
-
 import React from "react";
 import { AlertCircle } from "lucide-react";
 import { Card, CardHeader, CardTitle, CardDescription, CardContent } from "@jaama/ui";

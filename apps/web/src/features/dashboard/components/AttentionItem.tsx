@@ -1,5 +1,3 @@
-"use client";
-
 import React from "react";
 import Link from "next/link";
 import { Wallet, AlertTriangle, Clock, ArrowRight } from "lucide-react";

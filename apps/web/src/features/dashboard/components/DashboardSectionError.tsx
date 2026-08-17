@@ -1,5 +1,3 @@
-"use client";
-
 import React from "react";
 import { AlertCircle, RefreshCw } from "lucide-react";
 import { Alert, Button } from "@jaama/ui";
