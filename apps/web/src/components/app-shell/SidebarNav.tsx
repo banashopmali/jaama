@@ -1,7 +1,7 @@
 "use client";
 
 import React from "react";
-import { navigationConfig, bottomNavItems } from "@/config/navigation.config";
+import { navigationConfig } from "@/config/navigation.config";
 import { SidebarNavItem } from "./SidebarNavItem";
 import { useAppShell } from "./AppShellContext";
 
@@ -25,18 +25,6 @@ export const SidebarNav: React.FC = () => {
           ))}
         </div>
       ))}
-
-      {/* Bottom Nav Items (Paramètres & Aide) */}
-      <div className="pt-4 border-t border-border-subtle space-y-1">
-        {!isCollapsed && (
-          <h3 className="hidden lg:block px-3 text-[11px] font-bold text-content-muted uppercase tracking-wider mb-2">
-            CONFIGURATION
-          </h3>
-        )}
-        {bottomNavItems.map((item) => (
-          <SidebarNavItem key={item.id} item={item} />
-        ))}
-      </div>
     </nav>
   );
 };

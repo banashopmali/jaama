@@ -1,76 +1,82 @@
-# JAAMA App Shell V1 — Spécification d'Ingénierie & Architecture
+# Spécifications Techniques — JAAMA App Shell V1
 
-Document de référence pour le composant racine `AppShell` et la structure d'application réactive du produit JAAMA (`JAA-S0-03`).
-
----
-
-## 1. Vue d'Ensemble & Architecture Réactive
-
-Le Shell App V1 constitue le cadre permanent de l'application Web JAAMA (`apps/web`). Il encadre toutes les futures pages produit authentifiées (`Accueil`, `Ventes`, `Produits`, `Stocks`, `Clients`, `Factures`, `Paiements`, `Rapports`, `Paramètres`).
-
-### Modèle Responsive Multi-Terminaux
-- **Desktop (>= 1024px)** :
-  - Barre latérale fixe à gauche (Sidebar) : `256px` étendue / `80px` réduite.
-  - En-tête supérieur fixe (Topbar) : hauteur `64px`.
-  - Zone de contenu principal (Canvas) : fond neutre sémantique `#F8FAFC`, défilement autonome.
-- **Tablette (768px – 1023px)** :
-  - Barre latérale réduite par défaut (`80px`).
-  - Topbar préservée avec contrôles essentiels.
-- **Mobile (< 768px)** :
-  - Masquage de la barre latérale desktop.
-  - En-tête mobile compact (`MobileHeader`) avec logo et contexte entreprise.
-  - Barre de navigation inférieure fixe (`MobileBottomNav`) à 5 destinations avec bouton central d'action rapide global.
+Ce document consigne la conception technique et l'architecture fonctionnelle du Shell d'application JAAMA (JAA-S0-03).
 
 ---
 
-## 2. Découpage des Composants (`apps/web/src/components/app-shell`)
+## 1. Vue d'Ensemble
 
-| Composant | Rôle |
-| :--- | :--- |
-| `AppShell.tsx` | Conteneur principal assemblant Sidebar, Topbar, Canvas et Mobile Navigation. |
-| `AppShellContext.tsx` | Gestionnaire d'état réactif (mode réduit/étendu, tiroir mobile, route active, persistance localStorage `jaama.sidebar.collapsed`). |
-| `Sidebar.tsx` | Sidebar desktop/tablette réactive (`256px` / `80px`). |
-| `SidebarHeader.tsx` | En-tête de la sidebar avec logo officiel JAAMA et identité de produit. |
-| `WorkspaceSwitcher.tsx` | Déclencheur et popover de sélection de l'entreprise active (`Diallo Commerce` / `Mali`). |
-| `SidebarNav.tsx` | Liste de navigation pilotée par la configuration (`navigationConfig`). |
-| `SidebarNavItem.tsx` | Composant d'élément de nav réutilisable (états actif, survol, focus, tooltip en mode réduit, `aria-current="page"`). |
-| `SidebarCollapseButton.tsx` | Bouton accessible de réduction/développement avec libellés dynamiques. |
-| `Topbar.tsx` | En-tête supérieur avec titre de contexte, recherche globale, bouton `+ Nouveau`, notifications et profil utilisateur. |
-| `GlobalSearch.tsx` | Champ de recherche globale avec raccourci clavier `Ctrl+K` / `Cmd+K`. |
-| `NotificationsButton.tsx` | Bouton cloche avec indicateur de notifications non lues. |
-| `UserMenuTrigger.tsx` | Déclencheur du menu utilisateur avec avatar initiales (`HB`) et popover d'options. |
-| `MobileHeader.tsx` | En-tête mobile compact avec logo et sélecteur d'entreprise simplifié. |
-| `MobileBottomNav.tsx` | Navigation inférieure mobile à 5 destinations et bouton central de création. |
-| `AppContent.tsx` | Zone de contenu principal avec lien d'évitement accessible (`Passer au contenu principal`). |
+Le Shell d'application constitue le cadre de navigation persistant de l'application web JAAMA (`apps/web`). Il encadre les futures vues métier (`Dashboard`, `Ventes`, `Produits`, `Stocks`, `Clients`, `Factures`, `Paiements`, `Rapports`, `Paramètres`).
 
----
-
-## 3. Configuration de la Navigation (`navigation.config.ts`)
-
-La navigation est entièrement pilotée par la configuration typée :
-- **GROUPES** : `PRINCIPAL`, `OPÉRATIONS`, `FINANCES`, `ANALYSE`, `CONFIGURATION`.
-- **MODULES ACTIFS SIMULÉS** : `Accueil`, `Ventes`, `Produits`, `Stocks`, `Clients`, `Factures & devis`, `Paiements`, `Rapports`, `Paramètres`, `Aide & support`.
-- **NAV MOBILE** : 5 destinations max (`Accueil`, `Ventes`, `Produits`, `Clients`, `Plus`).
+```
++-------------------------------------------------------------------+
+|                        MobileHeader (<768px)                      |
++-------------------+-----------------------------------------------+
+|                   | Topbar (>=768px)                              |
+| Sidebar (>=768px) +-----------------------------------------------+
+|  - Logo           |                                               |
+|  - Business Select| AppContent Canvas                             |
+|  - Modules        |  - Skip link                                  |
+|  - Utilities      |  - Page Content                               |
+|  - Collapse Ctrl  |                                               |
++-------------------+-----------------------------------------------+
+|                     MobileBottomNav (<768px)                      |
++-------------------------------------------------------------------+
+```
 
 ---
 
-## 4. Contrats d'Accessibilité P0
+## 2. Décisions d'Architecture & Contrats
 
-1. **Lien d'évitement (Skip Link)** : Présent en haut de page, visible au focus clavier (`Passer au contenu principal` ciblant `#main-content`).
-2. **Repères sémantiques (Landmarks)** : `<aside>`, `<header>`, `<nav>`, `<main id="main-content">`.
-3. **Indicateurs d'état** : Attribut `aria-current="page"` sur l'élément de navigation actif.
-4. **Interactions clavier** : Focus visible (`ring-2 ring-brand-primary`), gestion de la touche `Escape` sur les menus popovers, raccourci `Ctrl+K` pour la recherche.
-5. **Iconographie** : Tous les boutons d'icônes possèdent un attribut `aria-label` descriptif.
+### 2.1 Routage & Single Source of Truth
+- Le composant `AppShellContext` ne maintient aucun état d'itinéraire réinventé (`activePath`).
+- L'URL gérée par le routeur Next.js (`usePathname()`) est la seule source de vérité.
+- Le helper canonique `isRouteActive(pathname, href)` régit la détection du statut actif (`aria-current="page"`) :
+  - `href = "/"` -> actif uniquement sur la racine exacte `/`.
+  - `href = "/ventes"` -> actif sur `/ventes` ainsi que les sous-voies `/ventes/123`.
+
+### 2.2 Isolement des En-têtes & Réactivité Séquentielle
+- **Mobile (<768px)** : Seul `MobileHeader` est affiché. L'en-tête `Topbar` possède la classe `hidden md:flex` et est strictement masqué sur mobile.
+- **Tablette (768px–1023px)** : La sidebar est automatiquement réduite à `80px` (`w-20 lg:w-64`). Seul le logo compact officiel est affiché. Le contrôle de réduction manuelle est masqué (`hidden lg:block`).
+- **Desktop (>=1024px)** : La largeur de la sidebar suit la préférence de réduction de l'utilisateur stockée dans `localStorage` (`jaama.sidebar.collapsed`).
+
+### 2.3 Asset Logo Officiel JAAMA
+- Tous les composants (`SidebarHeader`, `MobileHeader`, `JaamaLogo`) consomment l'asset officiel du dépôt (`/assets/jaama_logo.jpeg`).
+- Aucune reconstruction manuelle de badge "J", de texte logo redessiné ou de mention "Gestion SaaS" inventée n'est autorisée.
+- `TRANSPARENT OFFICIAL JAAMA LOGO ASSET REQUIRED` : L'asset JPEG actuel est conservé sans déformation ni bidouillage CSS dans l'attente du fichier SVG officiel.
+
+### 2.4 Structure de Navigation & Utilitaires Fixes
+- **Modules Métier Défilants** : `SidebarNav` gère la zone défilante (`flex-1 overflow-y-auto`) contenant `PRINCIPAL`, `OPÉRATIONS`, `FINANCES` et `ANALYSE` (incluant le module `Plus`).
+- **Utilitaires Bas de Page Fixes** : Les liens `Paramètres` et `Aide & support` sont ancrés dans un conteneur fixe au bas de la barre latérale pour éviter qu'une longue liste de modules ne les masque hors écran.
+- **Dérivation Mobile** : Les destinations mobiles (`MobileBottomNav`) sont dérivées dynamiquement de la configuration canonique `navigationConfig` via `getMobileBottomNavDestinations()`.
+
+### 2.5 Support Safe-Area Mobile
+- `MobileBottomNav` intègre le style `pb-[env(safe-area-inset-bottom,0px)]` pour garantir un espace de navigation confortable de 64px même sur les terminaux munis d'un barreau de balayage (ex. iPhone).
 
 ---
 
-## 5. Invariant du Logo Officiel & Note d'Asset
+## 3. Matrice des Composants
 
-- L'intégration utilise l'asset de logo officiel pour le rendu visuel.
-- **Exigence d'Asset Transparent** : `TRANSPARENT OFFICIAL LOGO ASSET REQUIRED`. Ne pas appliquer de bordures ou fonds rectangulaires artificiels autour du logo.
+| Composant | Rôle & Responsabilité | Clés d'Accessibilité / Réactivité |
+| :--- | :--- | :--- |
+| `AppShell` | Conteneur racine avec `AppShellProvider`. | Navigation au clavier, layout flex. |
+| `Sidebar` | Barre latérale desktop/tablette (256px / 80px). | `hidden md:flex flex-col h-screen sticky`. |
+| `SidebarHeader` | Zone supérieure avec logo officiel JAAMA. | Affichage du logo compact sur tablette. |
+| `WorkspaceSwitcher` | Sélecteur d'entreprise active (`Diallo Commerce`). | `role="listbox"`, `aria-expanded`. |
+| `SidebarNav` | Zone défilante des modules métier. | `flex-1 overflow-y-auto`, `aria-label`. |
+| `SidebarNavItem` | Lien de navigation réutilisable. | `aria-current="page"`, tooltips au survol. |
+| `SidebarCollapseButton` | Bascule de réduction desktop uniquement. | `hidden lg:block`, persistance `localStorage`. |
+| `Topbar` | En-tête supérieur desktop (64px). | `hidden md:flex`, titre dynamique via `getPageTitle()`. |
+| `GlobalSearch` | Raccourci de recherche global avec `Ctrl+K`. | `aria-label`, écouteur de clavier global. |
+| `MobileHeader` | En-tête compact mobile (<768px). | `md:hidden`, logo mobile + store badge. |
+| `MobileBottomNav` | Barre de navigation inférieure à 5 onglets. | `md:hidden`, onglets dérivés, support safe-area. |
+| `AppContent` | Canevas de contenu principal. | Lien d'évitement (`#main-content`), `tabIndex={-1}`. |
 
 ---
 
-## 6. Guide d'Intégration des Futures Pages Produit
+## 4. Stratégie des Routes Neutres de Démonstration
 
-Toutes les nouvelles pages authentifiées ajoutées dans la route group `apps/web/src/app/(app)/` héritent automatiquement du `AppShell` sans duplication.
+Pour permettre la validation QA du routage sans développer les écrans métier :
+- Des pages neutres sont créées dans `apps/web/src/app/(app)/` (`/ventes`, `/produits`, `/stocks`, `/clients`, `/factures`, `/paiements`, `/rapports`, `/parametres`, `/aide`, `/menu`).
+- Chaque page rend le composant `ModulePlaceholder` indiquant `"Module à venir"`.
+- Aucun indicateur financier ou faux graphique métier n'est introduit.

@@ -3,7 +3,7 @@
 import React from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { NavItemConfig } from "@/config/navigation.config";
+import { NavItemConfig, isRouteActive } from "@/config/navigation.config";
 import { useAppShell } from "./AppShellContext";
 
 export interface SidebarNavItemProps {
@@ -13,7 +13,7 @@ export interface SidebarNavItemProps {
 export const SidebarNavItem: React.FC<SidebarNavItemProps> = ({ item }) => {
   const { isCollapsed } = useAppShell();
   const pathname = usePathname();
-  const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
+  const isActive = isRouteActive(pathname, item.href);
   const Icon = item.icon;
 
   const handleClick = (e: React.MouseEvent) => {
