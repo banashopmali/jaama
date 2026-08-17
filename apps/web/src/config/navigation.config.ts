@@ -29,6 +29,19 @@ export interface NavGroupConfig {
   items: NavItemConfig[];
 }
 
+/**
+ * Centralized, route-matching helper.
+ * Semantics:
+ * - href "/" is active ONLY when pathname === "/"
+ * - href "/ventes" is active for "/ventes" or "/ventes/123", but NOT "/ventes-other"
+ */
+export function isRouteActive(pathname: string, href: string): boolean {
+  if (href === "/") {
+    return pathname === "/";
+  }
+  return pathname === href || pathname.startsWith(`${href}/`);
+}
+
 export const navigationConfig: NavGroupConfig[] = [
   {
     id: "group-principal",
@@ -112,6 +125,13 @@ export const navigationConfig: NavGroupConfig[] = [
         icon: BarChart3,
         enabled: true,
       },
+      {
+        id: "nav-plus-desktop",
+        label: "Plus",
+        href: "/menu",
+        icon: MoreHorizontal,
+        enabled: true,
+      },
     ],
   },
 ];
@@ -133,46 +153,36 @@ export const bottomNavItems: NavItemConfig[] = [
   },
 ];
 
-export const mobileBottomNavDestinations: NavItemConfig[] = [
-  {
-    id: "mobile-nav-accueil",
-    label: "Accueil",
-    href: "/",
-    icon: Home,
-    enabled: true,
-  },
-  {
-    id: "mobile-nav-ventes",
-    label: "Ventes",
-    href: "/ventes",
-    icon: ShoppingCart,
-    enabled: true,
-  },
-  {
-    id: "mobile-nav-produits",
-    label: "Produits",
-    href: "/produits",
-    icon: Package,
-    enabled: true,
-  },
-  {
-    id: "mobile-nav-clients",
-    label: "Clients",
-    href: "/clients",
-    icon: Users,
-    enabled: true,
-  },
-  {
+/**
+ * Derived mobile bottom navigation destinations.
+ * Eliminates duplicate config maintenance by pulling items flagged with `isBottomNavMobile: true`
+ * and appending the mobile "Plus" menu destination.
+ */
+export function getMobileBottomNavDestinations(): NavItemConfig[] {
+  const derived: NavItemConfig[] = [];
+
+  for (const group of navigationConfig) {
+    for (const item of group.items) {
+      if (item.isBottomNavMobile) {
+        derived.push(item);
+      }
+    }
+  }
+
+  // Ensure "Plus" destination is present as the 5th mobile tab
+  derived.push({
     id: "mobile-nav-plus",
     label: "Plus",
     href: "/menu",
     icon: MoreHorizontal,
     enabled: true,
-  },
-];
+  });
+
+  return derived;
+}
 
 /**
- * Resolves page context title from current route pathname.
+ * Resolves page context title from current route pathname using canonical route matching.
  */
 export function getPageTitle(pathname: string): string {
   if (pathname === "/") return "Accueil";
@@ -180,20 +190,12 @@ export function getPageTitle(pathname: string): string {
   if (pathname === "/design-system") return "Design System QA";
 
   for (const group of navigationConfig) {
-    const item = group.items.find(
-      (i) => i.href === pathname || (i.href !== "/" && pathname.startsWith(i.href))
-    );
+    const item = group.items.find((i) => isRouteActive(pathname, i.href));
     if (item) return item.label;
   }
 
   for (const item of bottomNavItems) {
-    if (item.href === pathname || (item.href !== "/" && pathname.startsWith(item.href))) {
-      return item.label;
-    }
-  }
-
-  for (const item of mobileBottomNavDestinations) {
-    if (item.href === pathname || (item.href !== "/" && pathname.startsWith(item.href))) {
+    if (isRouteActive(pathname, item.href)) {
       return item.label;
     }
   }

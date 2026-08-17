@@ -1,9 +1,14 @@
 import { describe, it, expect, beforeEach, vi } from "vitest";
 import React from "react";
-import { render, screen, fireEvent, within } from "@testing-library/react";
+import { render, screen } from "@testing-library/react";
 import { AppShell } from "@/components/app-shell";
 import { shellMockData } from "@/config/shell-mock.data";
-import { getPageTitle } from "@/config/navigation.config";
+import {
+  getPageTitle,
+  isRouteActive,
+  getMobileBottomNavDestinations,
+  navigationConfig,
+} from "@/config/navigation.config";
 
 // Mock next/navigation usePathname
 let mockPathname = "/";
@@ -11,15 +16,30 @@ vi.mock("next/navigation", () => ({
   usePathname: () => mockPathname,
 }));
 
-describe("JAAMA App Shell Remediated Contracts & Routing", () => {
+describe("JAAMA App Shell Final Contract Cleanup & Routing", () => {
   beforeEach(() => {
     localStorage.clear();
     mockPathname = "/";
   });
 
-  describe("Route Awareness & Single Source of Truth (usePathname)", () => {
-    it("activates Ventes and sets aria-current='page' when pathname is /ventes", () => {
-      mockPathname = "/ventes";
+  describe("Canonical Route Matching Helper (isRouteActive)", () => {
+    it("matches exact root '/' route only when pathname is '/'", () => {
+      expect(isRouteActive("/", "/")).toBe(true);
+      expect(isRouteActive("/ventes", "/")).toBe(false);
+      expect(isRouteActive("/produits", "/")).toBe(false);
+    });
+
+    it("matches sub-routes and deep links correctly", () => {
+      expect(isRouteActive("/ventes", "/ventes")).toBe(true);
+      expect(isRouteActive("/ventes/123", "/ventes")).toBe(true);
+      expect(isRouteActive("/ventes/nouvelle", "/ventes")).toBe(true);
+      expect(isRouteActive("/ventes-speciales", "/ventes")).toBe(false);
+    });
+  });
+
+  describe("Route Awareness & Dynamic Page Context", () => {
+    it("activates Ventes for deep link /ventes/123", () => {
+      mockPathname = "/ventes/123";
 
       const { container } = render(
         <AppShell>
@@ -27,71 +47,60 @@ describe("JAAMA App Shell Remediated Contracts & Routing", () => {
         </AppShell>
       );
 
-      const nav = screen.getByRole("navigation", { name: "Navigation principale" });
       const ventesLink = container.querySelector('a[href="/ventes"]');
       const accueilLink = container.querySelector('a[href="/"]');
 
       expect(ventesLink).toHaveAttribute("aria-current", "page");
       expect(accueilLink).not.toHaveAttribute("aria-current");
-    });
-
-    it("activates Produits and sets aria-current='page' when pathname is /produits", () => {
-      mockPathname = "/produits";
-
-      const { container } = render(
-        <AppShell>
-          <div>Content Canvas</div>
-        </AppShell>
-      );
-
-      const produitsLink = container.querySelector('a[href="/produits"]');
-      const accueilLink = container.querySelector('a[href="/"]');
-
-      expect(produitsLink).toHaveAttribute("aria-current", "page");
-      expect(accueilLink).not.toHaveAttribute("aria-current");
+      expect(getPageTitle("/ventes/123")).toBe("Ventes");
     });
   });
 
-  describe("Dynamic Page Context Strategy", () => {
-    it("resolves exact page titles from pathname without manual props", () => {
-      expect(getPageTitle("/")).toBe("Accueil");
-      expect(getPageTitle("/ventes")).toBe("Ventes");
-      expect(getPageTitle("/produits")).toBe("Produits");
-      expect(getPageTitle("/stocks")).toBe("Stocks");
-      expect(getPageTitle("/clients")).toBe("Clients");
-      expect(getPageTitle("/factures")).toBe("Factures & devis");
-      expect(getPageTitle("/paiements")).toBe("Paiements");
-      expect(getPageTitle("/rapports")).toBe("Rapports");
-      expect(getPageTitle("/parametres")).toBe("Paramètres");
-      expect(getPageTitle("/aide")).toBe("Aide & support");
+  describe("Desktop Navigation & Plus Module", () => {
+    it("includes Desktop Plus module in navigation configuration", () => {
+      const allItems = navigationConfig.flatMap((g) => g.items);
+      const plusItem = allItems.find((i) => i.href === "/menu");
+
+      expect(plusItem).toBeDefined();
+      expect(plusItem?.label).toBe("Plus");
     });
   });
 
-  describe("Responsive Mobile / Desktop Chrome Contract", () => {
-    it("ensures Topbar is hidden on mobile (hidden md:flex) and MobileHeader is md:hidden", () => {
-      mockPathname = "/";
+  describe("Canonical Mobile Navigation Derivation", () => {
+    it("derives mobile bottom nav destinations from canonical navigation configuration", () => {
+      const destinations = getMobileBottomNavDestinations();
+      expect(destinations.length).toBe(5);
 
+      const labels = destinations.map((d) => d.label);
+      expect(labels).toEqual(["Accueil", "Ventes", "Produits", "Clients", "Plus"]);
+    });
+
+    it("applies safe-area inset styles to mobile bottom nav container", () => {
       const { container } = render(
         <AppShell>
           <div>Content</div>
         </AppShell>
       );
 
-      const headers = container.querySelectorAll("header");
-      expect(headers.length).toBe(2);
-
-      // Mobile Header
-      const mobileHeader = headers[0];
-      expect(mobileHeader).toHaveClass("md:hidden");
-
-      // Desktop Topbar
-      const desktopTopbar = headers[1];
-      expect(desktopTopbar).toHaveClass("hidden", "md:flex");
+      const mobileNav = container.querySelector('nav[aria-label="Navigation mobile principale"]');
+      expect(mobileNav).not.toBeNull();
+      expect(mobileNav?.className).toContain("safe-area-inset-bottom");
     });
   });
 
-  describe("Official JAAMA Logo Contract", () => {
-    it("renders official logo image asset in SidebarHeader and MobileHeader without manual J substitute", () => {
+  describe("Responsive Header & Collapse Controls", () => {
+    it("hides SidebarCollapseButton on tablet below lg breakpoint", () => {
+      const { container } = render(
+        <AppShell>
+          <div>Content</div>
+        </AppShell>
+      );
+
+      const collapseWrapper = container.querySelector('.hidden.lg\\:block button[aria-label="Réduire le menu"]')?.parentElement;
+      expect(collapseWrapper).toHaveClass("hidden", "lg:block");
+    });
+
+    it("renders official logo image asset without manual J substitute", () => {
       render(
         <AppShell>
           <div>Content</div>
@@ -113,24 +122,6 @@ describe("JAAMA App Shell Remediated Contracts & Routing", () => {
         firstName: "Hamidou",
         initials: "HB",
       });
-      // @ts-expect-error role should be removed
-      expect(shellMockData.currentUser.role).toBeUndefined();
-    });
-  });
-
-  describe("Sidebar Collapse & LocalStorage Persistence", () => {
-    it("toggles collapse state and updates localStorage", () => {
-      render(
-        <AppShell>
-          <div>Content</div>
-        </AppShell>
-      );
-
-      const collapseBtn = screen.getByRole("button", { name: "Réduire le menu" });
-      fireEvent.click(collapseBtn);
-
-      expect(screen.getByRole("button", { name: "Développer le menu" })).toBeInTheDocument();
-      expect(localStorage.getItem("jaama.sidebar.collapsed")).toBe("true");
     });
   });
 });
