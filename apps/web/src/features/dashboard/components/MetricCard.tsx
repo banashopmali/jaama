@@ -4,6 +4,7 @@ import React from "react";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";
 import { Card } from "@jaama/ui";
 import { DashboardMetric } from "../dashboard.types";
+import { formatTrend } from "../dashboard.utils";
 
 export interface MetricCardProps {
   metric: DashboardMetric;
@@ -12,6 +13,7 @@ export interface MetricCardProps {
 
 export const MetricCard: React.FC<MetricCardProps> = ({ metric, icon }) => {
   const trend = metric.trend;
+  const formattedTrendString = trend ? formatTrend(trend) : "";
 
   return (
     <Card
@@ -59,7 +61,7 @@ export const MetricCard: React.FC<MetricCardProps> = ({ metric, icon }) => {
               {trend.direction === "up" && <TrendingUp className="w-3 h-3 stroke-[2.5]" />}
               {trend.direction === "down" && <TrendingDown className="w-3 h-3 stroke-[2.5]" />}
               {trend.direction === "neutral" && <Minus className="w-3 h-3 stroke-[2.5]" />}
-              <span>{trend.value}</span>
+              <span>{formattedTrendString}</span>
             </span>
             <span className="text-content-secondary text-[11px]">
               {trend.periodContext}

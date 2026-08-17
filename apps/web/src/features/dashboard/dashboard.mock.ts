@@ -13,8 +13,9 @@ export const mockPopulatedSnapshot: DashboardSnapshot = {
       formattedValue: formatMoney(425000),
       rawValue: 425000,
       trend: {
-        value: "+12,5 %",
+        value: 12.5,
         direction: "up",
+        format: "percentage",
         periodContext: "vs hier",
       },
     },
@@ -25,8 +26,9 @@ export const mockPopulatedSnapshot: DashboardSnapshot = {
       rawValue: 24,
       unit: "ventes",
       trend: {
-        value: "+3",
+        value: 3,
         direction: "up",
+        format: "absolute",
         periodContext: "vs hier",
       },
     },
@@ -154,7 +156,7 @@ export const mockPopulatedSnapshot: DashboardSnapshot = {
       label: "Nouvelle vente",
       href: "/ventes",
       iconName: "plus-circle",
-      description: "Enregistrer un encaissement direct",
+      description: "Enregistrer une nouvelle vente",
     },
     {
       id: "qa-02",

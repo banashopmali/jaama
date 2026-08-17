@@ -2,9 +2,18 @@ export type DashboardStateMode = "populated" | "empty" | "loading" | "partial-er
 
 export type TrendDirection = "up" | "down" | "neutral";
 
+export type TrendFormat = "percentage" | "absolute";
+
 export type PaymentStatus = "Payée" | "Partiellement payée" | "À encaisser" | "Remboursée";
 
 export type SaleStatus = "Terminée" | "Annulée" | "Remboursée" | "Partiellement remboursée";
+
+export interface DashboardMetricTrend {
+  value: number;
+  direction: TrendDirection;
+  format: TrendFormat;
+  periodContext: string;
+}
 
 export interface DashboardMetric {
   id: string;
@@ -12,11 +21,7 @@ export interface DashboardMetric {
   formattedValue: string;
   rawValue: number;
   unit?: string;
-  trend?: {
-    value: string;
-    direction: TrendDirection;
-    periodContext: string;
-  };
+  trend?: DashboardMetricTrend;
   subtitle?: string;
   helperText?: string;
 }

@@ -37,10 +37,13 @@ export const RecentSalesTable: React.FC<RecentSalesTableProps> = ({ sales }) => 
               Client
             </th>
             <th scope="col" className="py-3 px-4">
-              Montant Total
+              Montant
             </th>
             <th scope="col" className="py-3 px-4">
-              Statut Paiement
+              Encaissé
+            </th>
+            <th scope="col" className="py-3 px-4">
+              Statut paiement
             </th>
             <th scope="col" className="py-3 px-4 text-right rounded-tr-lg">
               Heure
@@ -59,9 +62,12 @@ export const RecentSalesTable: React.FC<RecentSalesTableProps> = ({ sales }) => 
               </td>
               <td className="py-3.5 px-4 font-bold">
                 {formatMoney(sale.totalAmount)}
-                {sale.paymentStatus === "Partiellement payée" && (
-                  <span className="block text-[11px] font-medium text-status-warning">
-                    Encaissé : {formatMoney(sale.paidAmount)} · Reste : {formatMoney(sale.remainingAmount)}
+              </td>
+              <td className="py-3.5 px-4 font-bold">
+                {formatMoney(sale.paidAmount)}
+                {sale.remainingAmount > 0 && (
+                  <span className="block text-[11px] font-semibold text-status-warning">
+                    Reste : {formatMoney(sale.remainingAmount)}
                   </span>
                 )}
               </td>

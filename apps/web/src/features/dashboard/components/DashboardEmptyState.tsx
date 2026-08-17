@@ -2,8 +2,8 @@
 
 import React from "react";
 import Link from "next/link";
-import { PackagePlus, ShoppingBag, CheckCircle2, ArrowRight } from "lucide-react";
-import { Button, Card, CardHeader, CardTitle, CardDescription, CardContent } from "@jaama/ui";
+import { PackagePlus, ShoppingBag, CheckCircle2, ArrowRight, Store } from "lucide-react";
+import { Button, Card } from "@jaama/ui";
 
 export interface DashboardEmptyStateProps {
   userFirstName: string;
@@ -30,8 +30,8 @@ export const DashboardEmptyState: React.FC<DashboardEmptyStateProps> = ({
       <Card variant="default" className="p-6 md:p-8 border-border-brand-subtle bg-surface-default shadow-sm">
         <div className="max-w-2xl space-y-6">
           <div className="space-y-2">
-            <div className="w-12 h-12 rounded-2xl bg-surface-brand-subtle text-content-brand font-bold text-xl flex items-center justify-center border border-border-brand-subtle mb-4">
-              J
+            <div className="w-12 h-12 rounded-2xl bg-surface-brand-subtle text-content-brand flex items-center justify-center border border-border-brand-subtle mb-4">
+              <Store className="w-6 h-6" />
             </div>
             <h2 className="text-xl font-bold text-content-primary tracking-tight">
               Démarrez l&apos;activité de votre entreprise en 3 étapes simples
@@ -55,7 +55,7 @@ export const DashboardEmptyState: React.FC<DashboardEmptyStateProps> = ({
             </div>
             <div className="flex items-center gap-3 text-xs font-medium text-content-secondary">
               <div className="w-4 h-4 rounded-full border border-border-default shrink-0" />
-              <span>3. Enregistrer votre première vente ou encaissement</span>
+              <span>3. Enregistrer votre première vente</span>
             </div>
           </div>
 
@@ -106,16 +106,16 @@ export const DashboardEmptyState: React.FC<DashboardEmptyStateProps> = ({
 
         <Card variant="subtle" className="p-5 space-y-2">
           <h3 className="text-sm font-bold text-content-primary">
-            Encaissements &amp; Suivi des Créances
+            Suivi des Ventes &amp; Règlement des Créances
           </h3>
           <p className="text-xs text-content-secondary leading-relaxed">
-            Enregistrez les paiements comptants ou à crédit. Le tableau de bord distinguera automatiquement les montants payés des montants à encaisser.
+            Suivez les paiements comptants, partiels ou à crédit. Le tableau de bord distinguera automatiquement les montants payés des montants à encaisser.
           </p>
           <Link
             href="/ventes"
             className="inline-flex items-center gap-1 text-xs font-bold text-content-brand pt-2 hover:underline"
           >
-            <span>Enregistrer un encaissement</span>
+            <span>Enregistrer une vente</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </Link>
         </Card>
