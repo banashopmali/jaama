@@ -1,0 +1,7 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "framework": "next",
+  "buildCommand": "pnpm --filter @jaama/marketing build",
+  "installCommand": "pnpm install",
+  "outputDirectory": "apps/marketing/.next"
+}
