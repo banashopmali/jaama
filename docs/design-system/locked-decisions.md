@@ -17,9 +17,19 @@ Ce document consigne les décisions de design et d'architecture d'interface vali
 - Présentation en grilles réactives adaptées aux terminaux tactiles.
 
 ### JAAMA SALES LIST V1 — LOCKED DESIGN REFERENCE
-- Liste des ventes avec filtres rapides par période et statut de paiement (Payé, En attente, Annulé).
+- **Séparation stricte entre Statut de Vente et Statut de Paiement (`SALE != PAYMENT`)** :
+  - **STATUT DE VENTE (SALE STATUS)** :
+    - `Terminée` (Vente validée et livraison/délivrance effectuée)
+    - `Annulée` (Vente annulée)
+    - `Remboursée` (Vente intégralement remboursée)
+    - `Partiellement remboursée` (Vente ayant fait l'objet d'un remboursement partiel)
+  - **STATUT DE PAIEMENT (PAYMENT STATUS)** :
+    - `Payée` (Règlement intégral perçu)
+    - `Partiellement payée` (Acompte ou paiement partiel perçu)
+    - `À encaisser` (Paiement en attente d'encaissement / crédit client)
+    - `Remboursée` (Fonds restitués au client)
+- **Règle Métier d'Indépendance** : Une vente peut être commercialement `Terminée` tout en ayant un statut de paiement `Partiellement payée` (ex. Total vente : 100 000 FCFA, Encaissé : 70 000 FCFA, Reste à encaisser : 30 000 FCFA -> Statut Vente = `Terminée`, Statut Paiement = `Partiellement payée`).
 - Badges de statut sémantiques discrets.
-- Actions rapides (Imprimer la facture, Envoyer par WhatsApp/SMS).
 
 ---
 
