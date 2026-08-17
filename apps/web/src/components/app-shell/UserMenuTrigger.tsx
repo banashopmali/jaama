@@ -35,20 +35,15 @@ export const UserMenuTrigger: React.FC = () => {
         onClick={() => setIsOpen(!isOpen)}
         aria-expanded={isOpen}
         aria-haspopup="menu"
-        aria-label={`Menu utilisateur pour ${user.firstName} ${user.lastName}`}
+        aria-label={`Menu utilisateur pour ${user.firstName}`}
         className="flex items-center gap-2.5 p-1.5 rounded-xl hover:bg-surface-hover transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
       >
         <div className="w-8 h-8 rounded-lg bg-surface-brand-subtle text-content-brand font-bold text-xs flex items-center justify-center border border-border-brand-subtle shrink-0">
           {user.initials}
         </div>
-        <div className="hidden lg:flex flex-col text-left">
-          <span className="text-xs font-semibold text-content-primary leading-tight">
-            {user.firstName}
-          </span>
-          <span className="text-[10px] text-content-secondary leading-tight">
-            {user.role}
-          </span>
-        </div>
+        <span className="hidden lg:inline text-xs font-semibold text-content-primary leading-tight">
+          {user.firstName}
+        </span>
         <ChevronDown className="w-4 h-4 text-content-muted hidden lg:block" />
       </button>
 
@@ -57,11 +52,10 @@ export const UserMenuTrigger: React.FC = () => {
         <div
           role="menu"
           aria-label="Options utilisateur"
-          className="absolute right-0 mt-2 w-56 bg-surface-default border border-border-default rounded-xl shadow-elevated p-1.5 z-50 space-y-1"
+          className="absolute right-0 mt-2 w-52 bg-surface-default border border-border-default rounded-xl shadow-elevated p-1.5 z-50 space-y-1"
         >
           <div className="px-3 py-2 border-b border-border-subtle mb-1">
-            <p className="text-xs font-bold text-content-primary">{user.firstName} {user.lastName}</p>
-            <p className="text-[11px] text-content-secondary truncate">{user.email}</p>
+            <p className="text-xs font-bold text-content-primary">{user.firstName}</p>
           </div>
 
           <button
