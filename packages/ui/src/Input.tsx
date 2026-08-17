@@ -51,7 +51,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
         )}
         <div className="relative flex items-center w-full">
           {leftSlot && (
-            <div className="absolute left-3.5 flex items-center pointer-events-none text-slate-400">
+            <div className="absolute left-3.5 flex items-center pointer-events-none text-content-muted">
               {leftSlot}
             </div>
           )}
@@ -63,19 +63,19 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             aria-invalid={hasError}
             aria-describedby={helperText || error ? helperId : undefined}
             className={cn(
-              "w-full font-sans bg-white border text-slate-900 rounded-md transition-colors placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed",
+              "w-full font-sans bg-surface-default border text-content-primary rounded-md transition-colors placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:bg-surface-disabled disabled:text-content-disabled disabled:cursor-not-allowed",
               sizeClasses[size],
               leftSlot && "pl-10",
               rightSlot && "pr-10",
               hasError
-                ? "border-red-500 focus:border-red-500 focus:ring-red-200"
-                : "border-slate-300 focus:border-[#002B9A] focus:ring-[#002B9A]/20",
+                ? "border-border-invalid focus:border-border-invalid focus:ring-status-danger-border"
+                : "border-border-default focus:border-border-focus focus:ring-brand-primary/20",
               className
             )}
             {...props}
           />
           {rightSlot && (
-            <div className="absolute right-3.5 flex items-center text-slate-400">
+            <div className="absolute right-3.5 flex items-center text-content-muted">
               {rightSlot}
             </div>
           )}
@@ -85,7 +85,7 @@ export const Input = React.forwardRef<HTMLInputElement, InputProps>(
             id={helperId}
             className={cn(
               "mt-1.5 text-xs font-sans",
-              hasError ? "text-red-600 font-medium" : "text-slate-500"
+              hasError ? "text-status-danger-text font-medium" : "text-content-secondary"
             )}
           >
             {error || helperText}

@@ -5,7 +5,7 @@ export type ClassValue =
   | boolean
   | undefined
   | null
-  | { [key: string]: any }
+  | { [key: string]: boolean | number | string | undefined | null }
   | ClassValue[];
 
 export function cn(...inputs: ClassValue[]): string {

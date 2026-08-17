@@ -28,8 +28,8 @@ export const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
             defaultChecked={defaultChecked}
             onChange={onChange}
             className={cn(
-              "w-4 h-4 rounded border-slate-300 text-[#002B9A] focus:ring-2 focus:ring-[#002B9A]/30 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors accent-[#002B9A]",
-              error && "border-red-500",
+              "w-4 h-4 rounded border-border-default text-brand-primary focus:ring-2 focus:ring-brand-primary/30 focus:ring-offset-1 disabled:opacity-50 disabled:cursor-not-allowed cursor-pointer transition-colors accent-[var(--jaama-color-brand-primary)]",
+              error && "border-border-invalid",
               className
             )}
             {...props}
@@ -41,7 +41,7 @@ export const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
               <label
                 htmlFor={checkboxId}
                 className={cn(
-                  "font-medium text-slate-800 cursor-pointer",
+                  "font-medium text-content-primary cursor-pointer",
                   disabled && "opacity-50 cursor-not-allowed"
                 )}
               >
@@ -49,10 +49,10 @@ export const Checkbox = React.forwardRef<HTMLInputElement, CheckboxProps>(
               </label>
             )}
             {description && (
-              <p className="text-xs text-slate-500 mt-0.5">{description}</p>
+              <p className="text-xs text-content-secondary mt-0.5">{description}</p>
             )}
             {error && (
-              <p className="text-xs text-red-600 font-medium mt-0.5">{error}</p>
+              <p className="text-xs text-status-danger-text font-medium mt-0.5">{error}</p>
             )}
           </div>
         )}

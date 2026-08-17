@@ -13,15 +13,15 @@ export interface IconButtonProps
 
 const variantClasses = {
   primary:
-    "bg-[#002B9A] text-white hover:bg-[#00227B] active:bg-[#001A61] focus-visible:ring-[#002B9A] shadow-sm",
+    "bg-brand-primary text-content-inverse hover:bg-brand-primary-hover active:bg-brand-primary-active focus-visible:ring-brand-primary shadow-sm",
   secondary:
-    "bg-[#F0F4FF] text-[#002B9A] hover:bg-[#E0E9FF] active:bg-[#C7D7FE] border border-[#C7D7FE] focus-visible:ring-[#002B9A]",
+    "bg-surface-brand-subtle text-content-brand hover:bg-surface-brand-subtle-hover active:bg-surface-brand-subtle-active border border-border-brand-subtle focus-visible:ring-brand-primary",
   outline:
-    "bg-transparent text-slate-800 border border-slate-300 hover:bg-slate-50 active:bg-slate-100 focus-visible:ring-[#002B9A]",
+    "bg-transparent text-content-primary border border-border-default hover:bg-surface-subtle active:bg-surface-hover focus-visible:ring-brand-primary",
   ghost:
-    "bg-transparent text-slate-700 hover:bg-slate-100 active:bg-slate-200 focus-visible:ring-[#002B9A]",
+    "bg-transparent text-content-secondary hover:bg-surface-subtle active:bg-surface-hover focus-visible:ring-brand-primary",
   destructive:
-    "bg-red-600 text-white hover:bg-red-700 active:bg-red-800 focus-visible:ring-red-600 shadow-sm",
+    "bg-status-danger text-content-inverse hover:bg-status-danger-text active:bg-status-danger-text focus-visible:ring-status-danger shadow-sm",
 };
 
 const sizeClasses = {

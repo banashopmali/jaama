@@ -11,7 +11,7 @@ export const Skeleton = React.forwardRef<HTMLDivElement, SkeletonProps>(
       <div
         ref={ref}
         className={cn(
-          "animate-pulse bg-slate-200 motion-reduce:animate-none",
+          "animate-pulse bg-surface-disabled motion-reduce:animate-none",
           variant === "text" && "h-4 w-full rounded",
           variant === "circular" && "rounded-full",
           variant === "rectangular" && "rounded-md",

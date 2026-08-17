@@ -12,9 +12,9 @@ export const Card = React.forwardRef<HTMLDivElement, CardProps>(
         ref={ref}
         className={cn(
           "rounded-xl border font-sans transition-all duration-150",
-          variant === "default" && "bg-white border-slate-200 shadow-sm",
-          variant === "subtle" && "bg-slate-50 border-slate-200/80 shadow-none",
-          variant === "outline" && "bg-transparent border-slate-200 shadow-none",
+          variant === "default" && "bg-surface-default border-border-default shadow-card",
+          variant === "subtle" && "bg-surface-subtle border-border-subtle shadow-none",
+          variant === "outline" && "bg-transparent border-border-default shadow-none",
           className
         )}
         {...props}
@@ -42,7 +42,7 @@ export const CardTitle = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <h3
     ref={ref}
-    className={cn("text-lg font-bold text-slate-900 leading-none tracking-tight", className)}
+    className={cn("text-lg font-bold text-content-primary leading-none tracking-tight", className)}
     {...props}
   />
 ));
@@ -54,7 +54,7 @@ export const CardDescription = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <p
     ref={ref}
-    className={cn("text-sm text-slate-500", className)}
+    className={cn("text-sm text-content-secondary", className)}
     {...props}
   />
 ));
@@ -74,7 +74,7 @@ export const CardFooter = React.forwardRef<
 >(({ className, ...props }, ref) => (
   <div
     ref={ref}
-    className={cn("flex items-center p-6 pt-0 border-t border-slate-100 mt-4 pt-4", className)}
+    className={cn("flex items-center p-6 pt-0 border-t border-border-subtle mt-4 pt-4", className)}
     {...props}
   />
 ));

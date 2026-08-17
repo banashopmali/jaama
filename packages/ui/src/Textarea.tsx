@@ -47,10 +47,10 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
           aria-invalid={hasError}
           aria-describedby={helperText || error ? helperId : undefined}
           className={cn(
-            "w-full font-sans bg-white border text-slate-900 rounded-md p-3 transition-colors placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed resize-y",
+            "w-full font-sans bg-surface-default border text-content-primary rounded-md p-3 transition-colors placeholder:text-content-muted focus:outline-none focus:ring-2 focus:ring-offset-1 disabled:bg-surface-disabled disabled:text-content-disabled disabled:cursor-not-allowed resize-y",
             hasError
-              ? "border-red-500 focus:border-red-500 focus:ring-red-200"
-              : "border-slate-300 focus:border-[#002B9A] focus:ring-[#002B9A]/20",
+              ? "border-border-invalid focus:border-border-invalid focus:ring-status-danger-border"
+              : "border-border-default focus:border-border-focus focus:ring-brand-primary/20",
             className
           )}
           {...props}
@@ -60,7 +60,7 @@ export const Textarea = React.forwardRef<HTMLTextAreaElement, TextareaProps>(
             id={helperId}
             className={cn(
               "mt-1.5 text-xs font-sans",
-              hasError ? "text-red-600 font-medium" : "text-slate-500"
+              hasError ? "text-status-danger-text font-medium" : "text-content-secondary"
             )}
           >
             {error || helperText}

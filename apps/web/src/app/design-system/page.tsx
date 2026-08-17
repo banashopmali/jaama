@@ -44,7 +44,7 @@ export default function DesignSystemPreviewPage() {
               JAAMA Design System &amp; UI Primitives QA
             </h1>
             <p className="text-slate-600 text-sm mt-1">
-              Revue visuelle et validation des contrats d&apos;ingénierie UI <code className="text-xs bg-slate-200 px-1 py-0.5 rounded text-[#002B9A] font-semibold">@jaama/ui</code>.
+              Revue visuelle et validation des contrats d&apos;ingénierie UI <code className="text-xs bg-slate-200 px-1 py-0.5 rounded text-content-brand font-semibold">@jaama/ui</code>.
             </p>
           </div>
           <Link href="/">
@@ -64,29 +64,29 @@ export default function DesignSystemPreviewPage() {
 
             {/* Colors Grid */}
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-4">
-              <div className="p-4 rounded-lg bg-[#002B9A] text-white shadow-sm">
+              <div className="p-4 rounded-lg bg-brand-primary text-content-inverse shadow-sm">
                 <div className="text-xs font-mono opacity-80">Primary</div>
-                <div className="text-sm font-bold mt-1">#002B9A</div>
+                <div className="text-sm font-bold mt-1">brand-primary</div>
               </div>
-              <div className="p-4 rounded-lg bg-[#00227B] text-white shadow-sm">
+              <div className="p-4 rounded-lg bg-brand-primary-hover text-content-inverse shadow-sm">
                 <div className="text-xs font-mono opacity-80">Primary Hover</div>
-                <div className="text-sm font-bold mt-1">#00227B</div>
+                <div className="text-sm font-bold mt-1">brand-primary-hover</div>
               </div>
-              <div className="p-4 rounded-lg bg-[#0B1936] text-white shadow-sm">
+              <div className="p-4 rounded-lg bg-brand-navy text-content-inverse shadow-sm">
                 <div className="text-xs font-mono opacity-80">Deep Navy</div>
-                <div className="text-sm font-bold mt-1">#0B1936</div>
+                <div className="text-sm font-bold mt-1">brand-navy</div>
               </div>
-              <div className="p-4 rounded-lg bg-[#F0F4FF] text-[#002B9A] border border-[#C7D7FE]">
+              <div className="p-4 rounded-lg bg-surface-brand-subtle text-content-brand border border-border-brand-subtle">
                 <div className="text-xs font-mono opacity-80">Surface Light</div>
-                <div className="text-sm font-bold mt-1">#F0F4FF</div>
+                <div className="text-sm font-bold mt-1">surface-brand-subtle</div>
               </div>
-              <div className="p-4 rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-200">
+              <div className="p-4 rounded-lg bg-status-success-subtle text-status-success-text border border-status-success-border">
                 <div className="text-xs font-mono opacity-80">Success</div>
-                <div className="text-sm font-bold mt-1">#16A34A</div>
+                <div className="text-sm font-bold mt-1">status-success</div>
               </div>
-              <div className="p-4 rounded-lg bg-red-50 text-red-800 border border-red-200">
+              <div className="p-4 rounded-lg bg-status-danger-subtle text-status-danger-text border border-status-danger-border">
                 <div className="text-xs font-mono opacity-80">Danger</div>
-                <div className="text-sm font-bold mt-1">#DC2626</div>
+                <div className="text-sm font-bold mt-1">status-danger</div>
               </div>
             </div>
 
@@ -374,9 +374,9 @@ export default function DesignSystemPreviewPage() {
                 </CardHeader>
                 <CardContent className="space-y-4">
                   <div className="flex items-center gap-3">
-                    <Spinner size="sm" className="text-[#002B9A]" />
-                    <Spinner size="md" className="text-[#002B9A]" />
-                    <Spinner size="lg" className="text-[#002B9A]" />
+                    <Spinner size="sm" className="text-brand-primary" />
+                    <Spinner size="md" className="text-brand-primary" />
+                    <Spinner size="lg" className="text-brand-primary" />
                     <span className="text-xs text-slate-500 font-mono">Indicateurs inline</span>
                   </div>
                   <div className="space-y-2 pt-2">
