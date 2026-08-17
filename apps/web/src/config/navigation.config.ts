@@ -33,7 +33,7 @@ export interface NavGroupConfig {
  * Centralized, route-matching helper.
  * Semantics:
  * - href "/" is active ONLY when pathname === "/"
- * - href "/ventes" is active for "/ventes" or "/ventes/123", but NOT "/ventes-other"
+ * - href "/ventes" is active for "/ventes" or "/ventes/123", but NOT "/ventes-speciales"
  */
 export function isRouteActive(pathname: string, href: string): boolean {
   if (href === "/") {
@@ -126,11 +126,12 @@ export const navigationConfig: NavGroupConfig[] = [
         enabled: true,
       },
       {
-        id: "nav-plus-desktop",
+        id: "nav-plus",
         label: "Plus",
         href: "/menu",
         icon: MoreHorizontal,
         enabled: true,
+        isBottomNavMobile: true,
       },
     ],
   },
@@ -155,8 +156,8 @@ export const bottomNavItems: NavItemConfig[] = [
 
 /**
  * Derived mobile bottom navigation destinations.
- * Eliminates duplicate config maintenance by pulling items flagged with `isBottomNavMobile: true`
- * and appending the mobile "Plus" menu destination.
+ * Pulls all items flagged with `isBottomNavMobile: true` directly from `navigationConfig`.
+ * Ensures 100% single-source-of-truth without recreating navigation metadata.
  */
 export function getMobileBottomNavDestinations(): NavItemConfig[] {
   const derived: NavItemConfig[] = [];
@@ -168,15 +169,6 @@ export function getMobileBottomNavDestinations(): NavItemConfig[] {
       }
     }
   }
-
-  // Ensure "Plus" destination is present as the 5th mobile tab
-  derived.push({
-    id: "mobile-nav-plus",
-    label: "Plus",
-    href: "/menu",
-    icon: MoreHorizontal,
-    enabled: true,
-  });
 
   return derived;
 }

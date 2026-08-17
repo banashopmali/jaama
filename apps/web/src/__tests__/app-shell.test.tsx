@@ -63,16 +63,24 @@ describe("JAAMA App Shell Final Contract Cleanup & Routing", () => {
 
       expect(plusItem).toBeDefined();
       expect(plusItem?.label).toBe("Plus");
+      expect(plusItem?.isBottomNavMobile).toBe(true);
     });
   });
 
   describe("Canonical Mobile Navigation Derivation", () => {
-    it("derives mobile bottom nav destinations from canonical navigation configuration", () => {
+    it("derives mobile bottom nav destinations strictly from canonical navigation configuration without duplication", () => {
       const destinations = getMobileBottomNavDestinations();
       expect(destinations.length).toBe(5);
 
       const labels = destinations.map((d) => d.label);
       expect(labels).toEqual(["Accueil", "Ventes", "Produits", "Clients", "Plus"]);
+
+      // Verify that the /menu mobile destination is the exact canonical object reference from navigationConfig
+      const canonicalPlusItem = navigationConfig
+        .flatMap((g) => g.items)
+        .find((i) => i.href === "/menu");
+
+      expect(destinations[4]).toBe(canonicalPlusItem);
     });
 
     it("applies safe-area inset styles to mobile bottom nav container", () => {
