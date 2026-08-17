@@ -1,0 +1,12 @@
+{
+  "name": "@jaama/web",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo \"@jaama/web is a placeholder for the future SaaS web application\" && exit 0",
+    "build": "echo \"@jaama/web build placeholder\" && exit 0",
+    "lint": "echo \"@jaama/web lint placeholder\" && exit 0",
+    "typecheck": "echo \"@jaama/web typecheck placeholder\" && exit 0",
+    "test": "echo \"@jaama/web test placeholder\" && exit 0"
+  }
+}

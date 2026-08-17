@@ -1,0 +1,12 @@
+{
+  "name": "@jaama/api",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "echo \"@jaama/api is a placeholder for the future backend API\" && exit 0",
+    "build": "echo \"@jaama/api build placeholder\" && exit 0",
+    "lint": "echo \"@jaama/api lint placeholder\" && exit 0",
+    "typecheck": "echo \"@jaama/api typecheck placeholder\" && exit 0",
+    "test": "echo \"@jaama/api test placeholder\" && exit 0"
+  }
+}

@@ -1,17 +1,17 @@
 # dependencies
-/node_modules
-/.pnp
+node_modules/
+.pnp
 .pnp.js
 
 # testing
-/coverage
+coverage/
 
-# next.js
-/.next/
-/out/
-
-# production
-/build
+# next.js & build outputs
+.next/
+out/
+build/
+dist/
+.turbo/
 
 # debug
 npm-debug.log*
