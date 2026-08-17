@@ -27,7 +27,7 @@ jobs:
           cache: "pnpm"
 
       - name: Install dependencies
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile || (echo "=== LOCKFILE DIFFERENCE ON LINUX ===" && pnpm install && git diff pnpm-lock.yaml && exit 1)
 
       - name: Run Lint
         run: pnpm lint
