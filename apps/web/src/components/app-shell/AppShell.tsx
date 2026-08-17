@@ -11,16 +11,14 @@ import { AppContent } from "./AppContent";
 export interface AppShellProps {
   children: React.ReactNode;
   pageTitle?: string;
-  initialPath?: string;
 }
 
 export const AppShell: React.FC<AppShellProps> = ({
   children,
-  pageTitle = "Accueil",
-  initialPath = "/",
+  pageTitle,
 }) => {
   return (
-    <AppShellProvider initialPath={initialPath}>
+    <AppShellProvider>
       <div className="min-h-screen flex flex-col md:flex-row bg-surface-subtle font-sans text-content-primary antialiased">
         {/* Desktop / Tablet Sidebar */}
         <Sidebar />

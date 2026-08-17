@@ -16,7 +16,7 @@ export const SidebarNav: React.FC = () => {
       {navigationConfig.map((group) => (
         <div key={group.id} className="space-y-1">
           {!isCollapsed && (
-            <h3 className="px-3 text-[11px] font-bold text-content-muted uppercase tracking-wider mb-2">
+            <h3 className="hidden lg:block px-3 text-[11px] font-bold text-content-muted uppercase tracking-wider mb-2">
               {group.label}
             </h3>
           )}
@@ -29,7 +29,7 @@ export const SidebarNav: React.FC = () => {
       {/* Bottom Nav Items (Paramètres & Aide) */}
       <div className="pt-4 border-t border-border-subtle space-y-1">
         {!isCollapsed && (
-          <h3 className="px-3 text-[11px] font-bold text-content-muted uppercase tracking-wider mb-2">
+          <h3 className="hidden lg:block px-3 text-[11px] font-bold text-content-muted uppercase tracking-wider mb-2">
             CONFIGURATION
           </h3>
         )}

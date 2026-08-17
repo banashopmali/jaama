@@ -14,7 +14,7 @@ export const Sidebar: React.FC = () => {
     <aside
       aria-label="Menu principal"
       className={`hidden md:flex flex-col h-screen sticky top-0 bg-surface-default border-r border-border-subtle z-30 transition-all duration-300 select-none ${
-        isCollapsed ? "w-20" : "w-64"
+        isCollapsed ? "w-20" : "w-20 lg:w-64"
       }`}
     >
       <SidebarHeader />

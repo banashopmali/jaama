@@ -170,3 +170,33 @@ export const mobileBottomNavDestinations: NavItemConfig[] = [
     enabled: true,
   },
 ];
+
+/**
+ * Resolves page context title from current route pathname.
+ */
+export function getPageTitle(pathname: string): string {
+  if (pathname === "/") return "Accueil";
+  if (pathname === "/app-shell-preview") return "App Shell Preview";
+  if (pathname === "/design-system") return "Design System QA";
+
+  for (const group of navigationConfig) {
+    const item = group.items.find(
+      (i) => i.href === pathname || (i.href !== "/" && pathname.startsWith(i.href))
+    );
+    if (item) return item.label;
+  }
+
+  for (const item of bottomNavItems) {
+    if (item.href === pathname || (item.href !== "/" && pathname.startsWith(item.href))) {
+      return item.label;
+    }
+  }
+
+  for (const item of mobileBottomNavDestinations) {
+    if (item.href === pathname || (item.href !== "/" && pathname.startsWith(item.href))) {
+      return item.label;
+    }
+  }
+
+  return "Accueil";
+}

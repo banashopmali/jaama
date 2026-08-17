@@ -13,7 +13,6 @@ export const WorkspaceSwitcher: React.FC = () => {
   );
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Close dropdown on click outside or Escape key
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape" && isOpen) {
@@ -48,7 +47,7 @@ export const WorkspaceSwitcher: React.FC = () => {
         aria-expanded={isOpen}
         aria-haspopup="listbox"
         aria-label={`Entreprise actuelle : ${currentBusiness.name}, ${currentBusiness.country}. Cliquer pour changer d'entreprise.`}
-        className={`w-full flex items-center gap-3 p-2 rounded-lg transition-colors border text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary ${
+        className={`w-full flex items-center justify-center lg:justify-start gap-3 p-2 rounded-lg transition-colors border text-left focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary ${
           isOpen
             ? "bg-surface-subtle border-border-default shadow-sm"
             : "bg-surface-default border-border-subtle hover:bg-surface-hover hover:border-border-default"
@@ -59,7 +58,7 @@ export const WorkspaceSwitcher: React.FC = () => {
         </div>
 
         {!isCollapsed && (
-          <div className="flex-1 min-w-0">
+          <div className="hidden lg:flex flex-1 min-w-0 flex-col">
             <div className="text-xs font-semibold text-content-primary truncate">
               {currentBusiness.name}
             </div>
@@ -73,7 +72,7 @@ export const WorkspaceSwitcher: React.FC = () => {
 
         {!isCollapsed && (
           <ChevronDown
-            className={`w-4 h-4 text-content-muted shrink-0 transition-transform duration-200 ${
+            className={`hidden lg:block w-4 h-4 text-content-muted shrink-0 transition-transform duration-200 ${
               isOpen ? "rotate-180" : ""
             }`}
           />
@@ -86,7 +85,7 @@ export const WorkspaceSwitcher: React.FC = () => {
           role="listbox"
           aria-label="Liste de vos entreprises"
           className={`absolute z-50 mt-2 bg-surface-default border border-border-default rounded-xl shadow-elevated p-1.5 space-y-1 ${
-            isCollapsed ? "left-14 w-60 top-2" : "left-3 right-3 w-[calc(100%-1.5rem)] top-full"
+            isCollapsed ? "left-14 w-60 top-2" : "left-14 lg:left-3 right-auto lg:right-3 w-60 lg:w-[calc(100%-1.5rem)] top-2 lg:top-full"
           }`}
         >
           <div className="px-2 py-1.5 text-[11px] font-bold text-content-muted uppercase tracking-wider">

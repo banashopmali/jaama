@@ -2,12 +2,12 @@
 
 import React from "react";
 import Link from "next/link";
+import { usePathname } from "next/navigation";
 import { Plus } from "lucide-react";
 import { mobileBottomNavDestinations } from "@/config/navigation.config";
-import { useAppShell } from "./AppShellContext";
 
 export const MobileBottomNav: React.FC = () => {
-  const { activePath, setActivePath } = useAppShell();
+  const pathname = usePathname();
 
   return (
     <nav
@@ -16,7 +16,7 @@ export const MobileBottomNav: React.FC = () => {
       style={{ paddingBottom: "env(safe-area-inset-bottom, 0px)" }}
     >
       {mobileBottomNavDestinations.map((item, index) => {
-        const isActive = activePath === item.href || (item.href !== "/" && activePath.startsWith(item.href));
+        const isActive = pathname === item.href || (item.href !== "/" && pathname.startsWith(item.href));
         const Icon = item.icon;
 
         // Insert global create action button in the center (index 2)
@@ -33,7 +33,6 @@ export const MobileBottomNav: React.FC = () => {
 
               <Link
                 href={item.href}
-                onClick={() => setActivePath(item.href)}
                 aria-current={isActive ? "page" : undefined}
                 className={`flex-1 flex flex-col items-center justify-center h-full py-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary rounded-lg ${
                   isActive
@@ -52,7 +51,6 @@ export const MobileBottomNav: React.FC = () => {
           <Link
             key={item.id}
             href={item.href}
-            onClick={() => setActivePath(item.href)}
             aria-current={isActive ? "page" : undefined}
             className={`flex-1 flex flex-col items-center justify-center h-full py-1 text-[11px] font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary rounded-lg ${
               isActive

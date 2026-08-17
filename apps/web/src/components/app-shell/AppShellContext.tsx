@@ -8,8 +8,6 @@ interface AppShellContextValue {
   setCollapsed: (collapsed: boolean) => void;
   isMobileMenuOpen: boolean;
   setIsMobileMenuOpen: (open: boolean) => void;
-  activePath: string;
-  setActivePath: (path: string) => void;
 }
 
 const STORAGE_KEY = "jaama.sidebar.collapsed";
@@ -18,15 +16,13 @@ const AppShellContext = createContext<AppShellContextValue | undefined>(undefine
 
 export interface AppShellProviderProps {
   children: React.ReactNode;
-  initialPath?: string;
 }
 
-export function AppShellProvider({ children, initialPath = "/" }: AppShellProviderProps) {
+export function AppShellProvider({ children }: AppShellProviderProps) {
   const [isCollapsed, setIsCollapsed] = useState<boolean>(false);
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState<boolean>(false);
-  const [activePath, setActivePath] = useState<string>(initialPath);
 
-  // Safe client-side hydration for localStorage collapse state
+  // Safe client-side hydration for localStorage desktop collapse preference
   useEffect(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
@@ -67,8 +63,6 @@ export function AppShellProvider({ children, initialPath = "/" }: AppShellProvid
         setCollapsed,
         isMobileMenuOpen,
         setIsMobileMenuOpen,
-        activePath,
-        setActivePath,
       }}
     >
       {children}
