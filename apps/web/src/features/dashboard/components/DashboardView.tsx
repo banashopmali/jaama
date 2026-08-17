@@ -1,39 +1,29 @@
-"use client";
-
-import React, { useState } from "react";
-import { useSearchParams } from "next/navigation";
+import React from "react";
 import { DashboardStateMode, DashboardSnapshot } from "../dashboard.types";
 import { mockPopulatedSnapshot, mockEmptySnapshot } from "../dashboard.mock";
 import { DashboardHeader } from "./DashboardHeader";
 import { DashboardMetrics } from "./DashboardMetrics";
-import { SalesTrendCard } from "./SalesTrendCard";
+import { SalesTrendSection } from "./SalesTrendSection";
 import { AttentionPanel } from "./AttentionPanel";
 import { RecentSales } from "./RecentSales";
 import { QuickActions } from "./QuickActions";
 import { DashboardEmptyState } from "./DashboardEmptyState";
 import { DashboardLoading } from "./DashboardLoading";
-import { DashboardSectionError } from "./DashboardSectionError";
 
 export interface DashboardViewProps {
-  initialStateMode?: DashboardStateMode;
+  stateMode?: DashboardStateMode;
 }
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
-  initialStateMode = "populated",
+  stateMode = "populated",
 }) => {
-  const searchParams = useSearchParams();
-  const queryMode = searchParams?.get("dashboardState") as DashboardStateMode | null;
-  const currentMode: DashboardStateMode = queryMode || initialStateMode;
-
-  const [trendError, setTrendError] = useState<boolean>(currentMode === "partial-error");
-
   // Mode: Loading
-  if (currentMode === "loading") {
+  if (stateMode === "loading") {
     return <DashboardLoading />;
   }
 
   // Mode: Empty
-  if (currentMode === "empty") {
+  if (stateMode === "empty") {
     const snapshot: DashboardSnapshot = mockEmptySnapshot;
     return (
       <DashboardEmptyState
@@ -45,6 +35,7 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
 
   // Mode: Populated (or Partial-Error)
   const snapshot: DashboardSnapshot = mockPopulatedSnapshot;
+  const isPartialError = stateMode === "partial-error";
 
   return (
     <div className="space-y-6">
@@ -66,17 +57,10 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
         </div>
 
         <div className="order-2 lg:order-1 lg:col-span-2">
-          {trendError ? (
-            <div className="h-full flex items-center justify-center p-4 bg-surface-default border border-border-subtle rounded-xl shadow-xs">
-              <DashboardSectionError
-                title="Évolution des ventes indisponible"
-                message="Impossible de charger le graphique d'évolution pour le moment. Veuillez réessayer."
-                onRetry={() => setTrendError(false)}
-              />
-            </div>
-          ) : (
-            <SalesTrendCard salesTrend={snapshot.salesTrend} />
-          )}
+          <SalesTrendSection
+            salesTrend={snapshot.salesTrend}
+            initialHasError={isPartialError}
+          />
         </div>
       </div>
 
