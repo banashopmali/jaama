@@ -6,9 +6,13 @@ Ce document consigne les décisions de design et d'architecture d'interface vali
 
 ## 1. Systèmes Verrouillés Dans Stitch
 
-### JAAMA APP SHELL V1 — LOCKED
-- Layout avec barre de navigation latérale (Sidebar) rétractable et en-tête supérieur (Topbar) fixe.
-- Fond d'application neutre `#F8FAFC`.
+### JAAMA APP SHELL V1 — DESIGN LOCKED & ENGINEERING IMPLEMENTED IN JAA-S0-03
+- Layout avec barre de navigation latérale (Sidebar) rétractable (`256px` étendue / `80px` réduite) et en-tête supérieur (Topbar) fixe (`64px`).
+- Navigation réactive mobile avec en-tête compact et barre de navigation inférieure à 5 destinations (`MobileBottomNav`).
+- Persistance de la préférence de réduction de la sidebar dans le `localStorage` (`jaama.sidebar.collapsed`).
+- Navigation pilotée par la configuration (`navigationConfig`).
+- Sélecteur d'entreprise active (`Diallo Commerce` / `Mali`).
+- Fond d'application neutre sémantique (`#F8FAFC`).
 - Espacement et compacité maîtrisés pour minimiser le défilement inutile.
 
 ### JAAMA DASHBOARD V1 — LOCKED
@@ -49,7 +53,7 @@ Ce document consigne les décisions de design et d'architecture d'interface vali
 ## 3. Contrat du Logo Officiel JAAMA
 
 - Le logo officiel doit toujours posséder une présence forte et lisible.
-- Ne jamais restituer le logo dans un rectangle blanc/coloré artificiel sur fond sombre : utiliser ou exiger l'asset transparent officiel.
+- Ne jamais restituer le logo dans un rectangle blanc/coloré artificiel sur fond sombre : utiliser ou exiger l'asset transparent officiel (`TRANSPARENT OFFICIAL LOGO ASSET REQUIRED`).
 - Ne jamais déformer, étirer ou recolorer le logo.
 - Ne pas recréer le logo en simple texte lorsque l'asset officiel est requis.
 
@@ -60,5 +64,6 @@ Ce document consigne les décisions de design et d'architecture d'interface vali
 - Navigation complète au clavier (`Tab`, `Shift+Tab`, `Enter`, `Space`).
 - Indicateurs de focus visibles (`ring-2 ring-offset-2`).
 - Contrastes de couleurs conformes WCAG AA.
-- Attributs `aria-invalid`, `aria-label`, `aria-describedby` appliqués rigoureusement.
+- Attributs `aria-invalid`, `aria-label`, `aria-describedby`, `aria-current="page"` appliqués rigoureusement.
+- Lien d'évitement accessible (`Passer au contenu principal`).
 - Respect de la préférence système `prefers-reduced-motion`.
