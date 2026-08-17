@@ -2,13 +2,20 @@
   "name": "jaama-monorepo",
   "version": "1.0.0",
   "private": true,
-  "scripts": {
-    "dev": "pnpm -r --parallel dev",
-    "dev:marketing": "pnpm --filter @jaama/marketing dev",
-    "build": "pnpm -r build",
-    "lint": "pnpm -r lint",
-    "typecheck": "pnpm -r typecheck",
-    "test": "pnpm -r test"
+  "engines": {
+    "node": ">=22.13.0",
+    "pnpm": ">=11.0.0"
   },
-  "packageManager": "pnpm@11.7.0"
+  "scripts": {
+    "dev": "turbo dev",
+    "dev:marketing": "pnpm --filter @jaama/marketing dev",
+    "build": "turbo build",
+    "lint": "turbo lint",
+    "typecheck": "turbo typecheck",
+    "test": "turbo test"
+  },
+  "packageManager": "pnpm@11.7.0",
+  "devDependencies": {
+    "turbo": "^2.1.0"
+  }
 }
