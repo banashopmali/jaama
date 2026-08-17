@@ -1,0 +1,41 @@
+:root {
+  /* Brand Colors */
+  --jaama-color-brand-primary: #002B9A;
+  --jaama-color-brand-primary-hover: #00227B;
+  --jaama-color-brand-navy: #0B1936;
+  --jaama-color-brand-surface-light: #F0F4FF;
+  --jaama-color-brand-border-light: #C7D7FE;
+  --jaama-color-canvas: #F8FAFC;
+
+  /* Surfaces */
+  --jaama-color-surface-default: #FFFFFF;
+  --jaama-color-surface-subtle: #F8FAFC;
+  --jaama-color-surface-brand-subtle: #F0F4FF;
+
+  /* Borders */
+  --jaama-color-border-default: #E2E8F0;
+  --jaama-color-border-subtle: #F1F5F9;
+  --jaama-color-border-brand-subtle: #C7D7FE;
+  --jaama-color-border-focus: #002B9A;
+
+  /* Text */
+  --jaama-color-text-primary: #0F172A;
+  --jaama-color-text-secondary: #475569;
+  --jaama-color-text-muted: #94A3B8;
+  --jaama-color-text-inverse: #FFFFFF;
+  --jaama-color-text-brand: #002B9A;
+
+  /* Control Heights */
+  --jaama-control-sm: 2.5rem;
+  --jaama-control-md: 2.75rem;
+  --jaama-control-lg: 3rem;
+
+  /* Radii */
+  --jaama-radius-sm: 0.25rem;
+  --jaama-radius-md: 0.5rem;
+  --jaama-radius-lg: 0.75rem;
+  --jaama-radius-full: 9999px;
+
+  /* Fonts */
+  --font-plus-jakarta: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+}
