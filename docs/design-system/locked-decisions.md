@@ -15,10 +15,12 @@ Ce document consigne les décisions de design et d'architecture d'interface vali
 - Fond d'application neutre sémantique (`#F8FAFC`).
 - Espacement et compacité maîtrisés pour minimiser le défilement inutile.
 
-### JAAMA DASHBOARD V1 — LOCKED
-- Cartes KPI synthétiques avec typographie lisible.
-- Graphiques d'activité épurés (pas de dégradés agressifs ni de fioritures 3D).
-- Présentation en grilles réactives adaptées aux terminaux tactiles.
+### JAAMA DASHBOARD V1 — DESIGN LOCKED & ENGINEERING IMPLEMENTED IN JAA-S0-04
+- Cartes KPI synthétiques avec typographie lisible (*Ventes aujourd'hui*, *Nombre de ventes*, *À encaisser*, *Stock à surveiller*).
+- Graphiques d'activité épurés SVG sur 7 jours (pas de dégradés agressifs ni de fioritures 3D).
+- Panneau *À surveiller* synthétisant les alertes de créances, de stock et de facturation.
+- Présentation en grilles réactives adaptées aux terminaux tactiles (Desktop 4-cols, Tablette 2x2, Mobile cartes/listes).
+- Gestion native des 4 états UI (*Populated*, *Guided Empty*, *Skeleton Loading*, *Partial Section Error*).
 
 ### JAAMA SALES LIST V1 — LOCKED DESIGN REFERENCE
 - **Séparation stricte entre Statut de Vente et Statut de Paiement (`SALE != PAYMENT`)** :
