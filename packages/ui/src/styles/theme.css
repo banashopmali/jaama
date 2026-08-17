@@ -1,0 +1,79 @@
+:root {
+  /* Brand Colors */
+  --jaama-color-brand-primary: #002B9A;
+  --jaama-color-brand-primary-hover: #00227B;
+  --jaama-color-brand-primary-active: #001A61;
+  --jaama-color-brand-navy: #0B1936;
+  --jaama-color-brand-surface-light: #F0F4FF;
+  --jaama-color-brand-border-light: #C7D7FE;
+  --jaama-color-canvas: #F8FAFC;
+
+  /* Surfaces */
+  --jaama-color-surface-default: #FFFFFF;
+  --jaama-color-surface-subtle: #F8FAFC;
+  --jaama-color-surface-brand-subtle: #F0F4FF;
+  --jaama-color-surface-brand-subtle-hover: #E0E9FF;
+  --jaama-color-surface-brand-subtle-active: #C7D7FE;
+  --jaama-color-surface-hover: #F1F5F9;
+  --jaama-color-surface-disabled: #E2E8F0;
+
+  /* Borders */
+  --jaama-color-border-default: #E2E8F0;
+  --jaama-color-border-subtle: #F1F5F9;
+  --jaama-color-border-brand-subtle: #C7D7FE;
+  --jaama-color-border-focus: #002B9A;
+  --jaama-color-border-invalid: #DC2626;
+
+  /* Text */
+  --jaama-color-text-primary: #0F172A;
+  --jaama-color-text-secondary: #475569;
+  --jaama-color-text-muted: #94A3B8;
+  --jaama-color-text-inverse: #FFFFFF;
+  --jaama-color-text-brand: #002B9A;
+  --jaama-color-text-disabled: #94A3B8;
+
+  /* Status Colors */
+  --jaama-color-status-success: #16A34A;
+  --jaama-color-status-success-subtle: #DCFCE7;
+  --jaama-color-status-success-border: #86EFAC;
+  --jaama-color-status-success-text: #15803D;
+
+  --jaama-color-status-warning: #D97706;
+  --jaama-color-status-warning-subtle: #FEF3C7;
+  --jaama-color-status-warning-border: #FDE68A;
+  --jaama-color-status-warning-text: #B45309;
+
+  --jaama-color-status-danger: #DC2626;
+  --jaama-color-status-danger-subtle: #FEE2E2;
+  --jaama-color-status-danger-border: #FCA5A5;
+  --jaama-color-status-danger-text: #B91C1C;
+
+  --jaama-color-status-info: #2563EB;
+  --jaama-color-status-info-subtle: #EFF6FF;
+  --jaama-color-status-info-border: #BFDBFE;
+  --jaama-color-status-info-text: #1D4ED8;
+
+  --jaama-color-status-neutral: #64748B;
+  --jaama-color-status-neutral-subtle: #F1F5F9;
+  --jaama-color-status-neutral-border: #E2E8F0;
+  --jaama-color-status-neutral-text: #334155;
+
+  /* Control Heights */
+  --jaama-control-sm: 2.5rem;
+  --jaama-control-md: 2.75rem;
+  --jaama-control-lg: 3rem;
+
+  /* Radii */
+  --jaama-radius-sm: 0.25rem;
+  --jaama-radius-md: 0.5rem;
+  --jaama-radius-lg: 0.75rem;
+  --jaama-radius-full: 9999px;
+
+  /* Shadows */
+  --jaama-shadow-subtle: 0 1px 2px 0 rgba(15, 23, 42, 0.04);
+  --jaama-shadow-card: 0 1px 3px 0 rgba(15, 23, 42, 0.06), 0 1px 2px -1px rgba(15, 23, 42, 0.06);
+  --jaama-shadow-elevated: 0 10px 25px -5px rgba(0, 43, 154, 0.08), 0 8px 10px -6px rgba(0, 43, 154, 0.04);
+
+  /* Fonts */
+  --font-plus-jakarta: "Plus Jakarta Sans", system-ui, -apple-system, sans-serif;
+}
