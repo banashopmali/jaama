@@ -2,13 +2,13 @@ import React from "react";
 import { cn } from "./utils/cn";
 import { Spinner } from "./Spinner";
 
-export interface ButtonProps
+export interface IconButtonProps
   extends React.ButtonHTMLAttributes<HTMLButtonElement> {
+  "aria-label": string;
   variant?: "primary" | "secondary" | "outline" | "ghost" | "destructive";
   size?: "sm" | "md" | "lg";
   isLoading?: boolean;
-  leftIcon?: React.ReactNode;
-  rightIcon?: React.ReactNode;
+  icon: React.ReactNode;
 }
 
 const variantClasses = {
@@ -25,22 +25,21 @@ const variantClasses = {
 };
 
 const sizeClasses = {
-  sm: "h-10 px-4 text-sm font-medium rounded-md gap-2",
-  md: "h-11 px-5 text-base font-semibold rounded-md gap-2.5",
-  lg: "h-12 px-6 text-base font-semibold rounded-lg gap-3",
+  sm: "w-10 h-10 text-sm rounded-md",
+  md: "w-11 h-11 text-base rounded-md",
+  lg: "w-12 h-12 text-lg rounded-lg",
 };
 
-export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+export const IconButton = React.forwardRef<HTMLButtonElement, IconButtonProps>(
   (
     {
-      variant = "primary",
+      "aria-label": ariaLabel,
+      variant = "outline",
       size = "md",
       isLoading = false,
-      leftIcon,
-      rightIcon,
+      icon,
       disabled,
       className,
-      children,
       type = "button",
       ...props
     },
@@ -52,22 +51,20 @@ export const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
       <button
         ref={ref}
         type={type}
+        aria-label={ariaLabel}
         disabled={isDisabled}
         className={cn(
-          "inline-flex items-center justify-center font-sans transition-colors duration-150 ease-in-out cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none",
+          "inline-flex items-center justify-center font-sans transition-colors duration-150 ease-in-out cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-offset-2 disabled:opacity-60 disabled:cursor-not-allowed disabled:pointer-events-none shrink-0",
           variantClasses[variant],
           sizeClasses[size],
           className
         )}
         {...props}
       >
-        {isLoading && <Spinner size={size === "sm" ? "sm" : "md"} />}
-        {!isLoading && leftIcon && <span className="inline-flex shrink-0">{leftIcon}</span>}
-        <span>{children}</span>
-        {!isLoading && rightIcon && <span className="inline-flex shrink-0">{rightIcon}</span>}
+        {isLoading ? <Spinner size={size === "sm" ? "sm" : "md"} /> : icon}
       </button>
     );
   }
 );
 
-Button.displayName = "Button";
+IconButton.displayName = "IconButton";
