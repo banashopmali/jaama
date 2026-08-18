@@ -12,6 +12,7 @@ export interface MixedPaymentEditorProps {
   onAddAllocation: (allocation: PosPaymentAllocation) => void;
   onRemoveAllocation: (id: string) => void;
   onUpdateAllocationAmount: (id: string, amount: number) => void;
+  onUpdateAllocationMethod: (id: string, method: Exclude<PaymentMethod, "mixed" | "credit">) => void;
 }
 
 const allowedMethods: Exclude<PaymentMethod, "mixed" | "credit">[] = [
@@ -28,14 +29,19 @@ export const MixedPaymentEditor: React.FC<MixedPaymentEditorProps> = ({
   onAddAllocation,
   onRemoveAllocation,
   onUpdateAllocationAmount,
+  onUpdateAllocationMethod,
 }) => {
   const totalAllocated = allocations.reduce((sum, a) => sum + Math.max(0, a.amount), 0);
   const remaining = Math.max(0, totalAmount - totalAllocated);
   const paymentStatus = derivePaymentStatus(totalAmount, totalAllocated);
 
+  const usedMethods = new Set(allocations.map((a) => a.method));
+  const unusedMethods = allowedMethods.filter((m) => !usedMethods.has(m));
+
   const handleAdd = () => {
-    const usedMethods = new Set(allocations.map((a) => a.method));
-    const nextMethod = allowedMethods.find((m) => !usedMethods.has(m)) || "cash";
+    if (unusedMethods.length === 0) return;
+
+    const nextMethod = unusedMethods[0];
     const defaultAmount = remaining > 0 ? remaining : 5000;
 
     onAddAllocation({
@@ -62,20 +68,24 @@ export const MixedPaymentEditor: React.FC<MixedPaymentEditorProps> = ({
             key={alloc.id}
             className="flex items-center gap-2 bg-surface-default p-2.5 rounded-lg border border-border-subtle"
           >
+            {/* IMMUTABLE METHOD SELECTOR */}
             <select
               value={alloc.method}
               onChange={(e) => {
                 const updatedMethod = e.target.value as Exclude<PaymentMethod, "mixed" | "credit">;
-                alloc.method = updatedMethod;
+                onUpdateAllocationMethod(alloc.id, updatedMethod);
               }}
-              aria-label={`Mode pour allocation ${alloc.id}`}
-              className="text-xs font-bold text-content-primary bg-transparent border-none focus:outline-none"
+              aria-label={`Mode de paiement pour l'allocation ${alloc.id}`}
+              className="text-xs font-bold text-content-primary bg-transparent border border-border-default rounded px-2 py-1 focus:outline-none focus:ring-2 focus:ring-brand-primary"
             >
-              {allowedMethods.map((m) => (
-                <option key={m} value={m}>
-                  {getPaymentMethodLabel(m)}
-                </option>
-              ))}
+              {allowedMethods.map((m) => {
+                const isSelectedByOther = allocations.some((a) => a.id !== alloc.id && a.method === m);
+                return (
+                  <option key={m} value={m} disabled={isSelectedByOther}>
+                    {getPaymentMethodLabel(m)} {isSelectedByOther ? "(Déjà utilisé)" : ""}
+                  </option>
+                );
+              })}
             </select>
 
             <input
@@ -106,12 +116,12 @@ export const MixedPaymentEditor: React.FC<MixedPaymentEditorProps> = ({
         ))}
       </div>
 
-      {/* Add Allocation CTA */}
-      {allocations.length < allowedMethods.length && (
+      {/* Add Allocation CTA (Visible ONLY if unused methods exist) */}
+      {unusedMethods.length > 0 && (
         <button
           type="button"
           onClick={handleAdd}
-          className="text-xs font-semibold text-content-brand hover:text-brand-primary-hover flex items-center gap-1 pt-1"
+          className="text-xs font-semibold text-content-brand hover:text-brand-primary-hover flex items-center gap-1 pt-1 cursor-pointer"
         >
           <Plus className="w-3.5 h-3.5" />
           <span>+ Ajouter un autre mode de paiement</span>

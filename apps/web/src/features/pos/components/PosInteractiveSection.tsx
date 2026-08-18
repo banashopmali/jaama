@@ -49,6 +49,7 @@ type PosAction =
   | { type: "ADD_ALLOCATION"; payload: PosPaymentAllocation }
   | { type: "REMOVE_ALLOCATION"; payload: string }
   | { type: "UPDATE_ALLOCATION_AMOUNT"; payload: { id: string; amount: number } }
+  | { type: "UPDATE_ALLOCATION_METHOD"; payload: { id: string; method: Exclude<PaymentMethod, "mixed" | "credit"> } }
   | { type: "GO_TO_STEP"; payload: PosStep }
   | { type: "CONFIRM_MOCK_SALE" }
   | { type: "RESET_POS" };
@@ -260,6 +261,17 @@ function posReducer(state: PosState, action: PosAction): PosState {
       };
     }
 
+    case "UPDATE_ALLOCATION_METHOD": {
+      const { id, method } = action.payload;
+      return {
+        ...state,
+        paymentAllocations: state.paymentAllocations.map((a) =>
+          a.id === id ? { ...a, method } : a
+        ),
+        validationError: null,
+      };
+    }
+
     case "GO_TO_STEP":
       return { ...state, step: action.payload, validationError: null };
 
@@ -363,11 +375,7 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
 
       {/* Main Responsive Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/*
-          Product Catalog Column:
-          - Desktop (>=1024px, lg:): Always visible (lg:block lg:col-span-7 xl:col-span-8).
-          - Mobile (<1024px): Visible ONLY when state.step === "catalog". Hidden when step is "cart" or "checkout".
-        */}
+        {/* Product Catalog Column */}
         <div
           className={
             state.step === "catalog"
@@ -390,11 +398,7 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
           />
         </div>
 
-        {/*
-          Right Panel / Mobile Step Views:
-          - Desktop (>=1024px, lg:): Always visible alongside catalog (lg:block lg:col-span-5 xl:col-span-4).
-          - Mobile (<1024px): Controlled explicitly by step ("cart" or "checkout").
-        */}
+        {/* Right Panel / Mobile Step Views */}
         <div className="lg:col-span-5 xl:col-span-4">
           {/* Desktop Panel View (sticky top) */}
           <div className="hidden lg:block sticky top-20">
@@ -416,6 +420,9 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
                 onRemoveAllocation={(id) => dispatch({ type: "REMOVE_ALLOCATION", payload: id })}
                 onUpdateAllocationAmount={(id, amt) =>
                   dispatch({ type: "UPDATE_ALLOCATION_AMOUNT", payload: { id, amount: amt } })
+                }
+                onUpdateAllocationMethod={(id, m) =>
+                  dispatch({ type: "UPDATE_ALLOCATION_METHOD", payload: { id, method: m } })
                 }
                 onBackToCart={() => dispatch({ type: "GO_TO_STEP", payload: "catalog" })}
                 onConfirmSale={() => dispatch({ type: "CONFIRM_MOCK_SALE" })}
@@ -478,6 +485,9 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
                 onRemoveAllocation={(id) => dispatch({ type: "REMOVE_ALLOCATION", payload: id })}
                 onUpdateAllocationAmount={(id, amt) =>
                   dispatch({ type: "UPDATE_ALLOCATION_AMOUNT", payload: { id, amount: amt } })
+                }
+                onUpdateAllocationMethod={(id, m) =>
+                  dispatch({ type: "UPDATE_ALLOCATION_METHOD", payload: { id, method: m } })
                 }
                 onBackToCart={() => dispatch({ type: "GO_TO_STEP", payload: "cart" })}
                 onConfirmSale={() => dispatch({ type: "CONFIRM_MOCK_SALE" })}

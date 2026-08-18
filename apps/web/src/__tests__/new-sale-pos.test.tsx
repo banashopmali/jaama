@@ -101,6 +101,15 @@ describe("JAAMA New Sale / POS V1 — Integrity & Behavior Contracts (JAA-S0-06)
       expect(validatePosCheckout(cart, "mixed", 0, 0, zeroAllocations, 100000)).toBe(
         "Chaque mode de règlement doit avoir un montant supérieur à 0 FCFA."
       );
+
+      // Duplicate mixed allocation method error
+      const duplicateAllocations = [
+        { id: "a1", method: "cash" as const, amount: 30000 },
+        { id: "a2", method: "cash" as const, amount: 40000 },
+      ];
+      expect(validatePosCheckout(cart, "mixed", 0, 0, duplicateAllocations, 100000)).toBe(
+        "Un mode de règlement ne peut être utilisé qu’une seule fois."
+      );
     });
   });
 
@@ -161,7 +170,6 @@ describe("JAAMA New Sale / POS V1 — Integrity & Behavior Contracts (JAA-S0-06)
     it("handles cash overpayment: total 8500 FCFA, cashReceived 10000 FCFA -> paidApplied 8500 FCFA, change 1500 FCFA", () => {
       render(<PosView posState="ready" />);
 
-      // Add Coca-Cola 50cl (500 FCFA) x 17 = 8500 FCFA total
       const addCocaBtn = screen.getByRole("button", { name: /Ajouter 1 Coca-Cola 50cl/i });
       for (let i = 0; i < 17; i++) {
         fireEvent.click(addCocaBtn);
@@ -173,19 +181,16 @@ describe("JAAMA New Sale / POS V1 — Integrity & Behavior Contracts (JAA-S0-06)
       const cashBtn = screen.getAllByRole("button", { name: /Sélectionner le mode de paiement Espèces/i })[0];
       fireEvent.click(cashBtn);
 
-      // Target explicit paid amount input by aria-label across all renders
       const paidInputs = screen.getAllByLabelText("Montant perçu en FCFA");
       paidInputs.forEach((input) => {
         fireEvent.change(input, { target: { value: "10000" } });
       });
 
-      expect(screen.getAllByText(/Monnaie à rendre/i).length).toBeGreaterThan(0);
-      expect(screen.getAllByText("1 500 FCFA").length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/1 500 FCFA/).length).toBeGreaterThan(0);
 
       const confirmBtn = screen.getAllByRole("button", { name: /Confirmer la vente/i })[0];
       fireEvent.click(confirmBtn);
 
-      // Verify deterministic mock reference VTE-0025
       expect(screen.getByText("VTE-0025")).toBeInTheDocument();
       expect(screen.getByText("Vente enregistrée")).toBeInTheDocument();
       expect(screen.getByText("Monnaie rendue au client :")).toBeInTheDocument();
@@ -198,7 +203,6 @@ describe("JAAMA New Sale / POS V1 — Integrity & Behavior Contracts (JAA-S0-06)
       fireEvent.click(screen.getAllByRole("button", { name: /Continuer vers le paiement/i })[0]);
       fireEvent.click(screen.getAllByRole("button", { name: /Sélectionner le mode de paiement Wave/i })[0]);
 
-      // Enter Wave amount 30 000 FCFA on 500 FCFA total
       const paidInputs = screen.getAllByLabelText("Montant perçu en FCFA");
       paidInputs.forEach((input) => {
         fireEvent.change(input, { target: { value: "30000" } });

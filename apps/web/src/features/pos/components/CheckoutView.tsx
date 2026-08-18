@@ -33,6 +33,7 @@ export interface CheckoutViewProps {
   onAddAllocation: (allocation: PosPaymentAllocation) => void;
   onRemoveAllocation: (id: string) => void;
   onUpdateAllocationAmount: (id: string, amount: number) => void;
+  onUpdateAllocationMethod: (id: string, method: Exclude<PaymentMethod, "mixed" | "credit">) => void;
   onBackToCart: () => void;
   onConfirmSale: () => void;
 }
@@ -53,6 +54,7 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
   onAddAllocation,
   onRemoveAllocation,
   onUpdateAllocationAmount,
+  onUpdateAllocationMethod,
   onBackToCart,
   onConfirmSale,
 }) => {
@@ -123,6 +125,7 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
             onAddAllocation={onAddAllocation}
             onRemoveAllocation={onRemoveAllocation}
             onUpdateAllocationAmount={onUpdateAllocationAmount}
+            onUpdateAllocationMethod={onUpdateAllocationMethod}
           />
         ) : (
           <PaymentAmountInput

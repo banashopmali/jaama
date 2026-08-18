@@ -113,6 +113,11 @@ export function validatePosCheckout(
       return "Veuillez ajouter au moins un mode de règlement.";
     }
 
+    const uniqueMethods = new Set(allocations.map((a) => a.method));
+    if (uniqueMethods.size < allocations.length) {
+      return "Un mode de règlement ne peut être utilisé qu’une seule fois.";
+    }
+
     const hasInvalidAllocation = allocations.some((a) => a.amount <= 0);
     if (hasInvalidAllocation) {
       return "Chaque mode de règlement doit avoir un montant supérieur à 0 FCFA.";
