@@ -1,9 +1,10 @@
-import { describe, it, expect, beforeEach, vi } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import { formatMoney, getPaymentMethodLabel, filterSales, calculateSalesSummary } from "../features/sales/sales.utils";
 import { SalesListView } from "../features/sales/components/SalesListView";
-import { mockPopulatedSales, mockSummaryData } from "../features/sales/sales.mock";
+import { mockPopulatedSales } from "../features/sales/sales.mock";
+import { SaleListItem } from "../features/sales/sales.types";
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
@@ -13,7 +14,7 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-describe("JAAMA Sales List V1 — Domain & Component Contracts (JAA-S0-05)", () => {
+describe("JAAMA Sales List V1 — Domain & Component Behavior Contracts (JAA-S0-05)", () => {
   describe("Domain & Utility Helpers (formatMoney, getPaymentMethodLabel, filterSales)", () => {
     it("formats 1425000 into '1 425 000 FCFA' without floating point bugs", () => {
       expect(formatMoney(1425000)).toBe("1 425 000 FCFA");
@@ -67,16 +68,48 @@ describe("JAAMA Sales List V1 — Domain & Component Contracts (JAA-S0-05)", () 
       expect(waveSales.every((s) => s.paymentMethod === "wave")).toBe(true);
     });
 
-    it("calculates summary statistics coherently", () => {
-      const summary = calculateSalesSummary(mockPopulatedSales);
-      expect(summary.totalSalesCount).toBe(mockPopulatedSales.length);
-      expect(summary.totalCollectedAmount + summary.totalToCollectAmount).toBeLessThanOrEqual(
-        summary.totalSalesAmount + 200000 // allows for cancelled/refunded differences
-      );
+    it("calculates summary statistics with exact semantic precision (excluding cancelled sales)", () => {
+      const sampleSet: SaleListItem[] = [
+        {
+          id: "s1",
+          reference: "VTE-101",
+          occurredAt: "17/08/2026 10:00",
+          customer: { name: "Client A" },
+          itemCount: 2,
+          totalAmount: 100000,
+          paidAmount: 70000,
+          remainingAmount: 30000,
+          paymentMethod: "wave",
+          paymentStatus: "Partiellement payée",
+          saleStatus: "Terminée",
+          seller: { id: "u1", name: "Vendor 1" },
+        },
+        {
+          id: "s2",
+          reference: "VTE-102",
+          occurredAt: "17/08/2026 11:00",
+          customer: { name: "Client B" },
+          itemCount: 1,
+          totalAmount: 50000,
+          paidAmount: 0,
+          remainingAmount: 0,
+          paymentMethod: "cash",
+          paymentStatus: "Remboursée",
+          saleStatus: "Annulée", // CANCELLED SALE
+          seller: { id: "u1", name: "Vendor 1" },
+        },
+      ];
+
+      const summary = calculateSalesSummary(sampleSet);
+      // Cancelled sale s2 MUST NOT inflate counts or amounts
+      expect(summary.totalSalesCount).toBe(1);
+      expect(summary.totalSalesAmount).toBe(100000);
+      expect(summary.totalCollectedAmount).toBe(70000);
+      expect(summary.totalToCollectAmount).toBe(30000);
     });
   });
 
-  describe("Mock Data Mathematical Invariants", () => {
+  describe("Mock Data & Business Contract Invariants", () => {
     it("verifies mock dataset respects non-negative values and remaining amount formulas", () => {
       for (const sale of mockPopulatedSales) {
         expect(sale.totalAmount).toBeGreaterThanOrEqual(0);
@@ -103,6 +136,14 @@ describe("JAAMA Sales List V1 — Domain & Component Contracts (JAA-S0-05)", () 
         }
       }
     });
+
+    it("verifies cancelled sale VTE-0017 has remainingAmount === 0 and is not presented as receivable", () => {
+      const cancelledSale = mockPopulatedSales.find((s) => s.reference === "VTE-0017");
+      expect(cancelledSale).toBeDefined();
+      expect(cancelledSale?.saleStatus).toBe("Annulée");
+      expect(cancelledSale?.remainingAmount).toBe(0);
+      expect(cancelledSale?.paymentStatus).not.toBe("À encaisser");
+    });
   });
 
   describe("Populated Sales List View", () => {
@@ -116,7 +157,7 @@ describe("JAAMA Sales List V1 — Domain & Component Contracts (JAA-S0-05)", () 
       expect(screen.getByRole("button", { name: /Nouvelle vente/i })).toBeInTheDocument();
     });
 
-    it("renders exactly 4 summary metric cards with mathematically coherent totals", () => {
+    it("renders exactly 4 summary metric cards with period-level totals", () => {
       render(<SalesListView salesState="populated" />);
 
       expect(screen.getByText("VENTES")).toBeInTheDocument();
@@ -175,6 +216,17 @@ describe("JAAMA Sales List V1 — Domain & Component Contracts (JAA-S0-05)", () 
 
       expect(screen.getAllByText("Client comptoir").length).toBeGreaterThan(0);
     });
+
+    it("renders disabled row action buttons with accessible name and title indicating feature is upcoming", () => {
+      render(<SalesListView salesState="populated" />);
+
+      const disabledButtons = screen.getAllByRole("button", {
+        name: /bientôt disponible/i,
+      });
+      expect(disabledButtons.length).toBeGreaterThan(0);
+      expect(disabledButtons[0]).toBeDisabled();
+      expect(disabledButtons[0]).toHaveAttribute("title", "Disponible prochainement");
+    });
   });
 
   describe("Interactive Search & Filtering", () => {
@@ -196,7 +248,7 @@ describe("JAAMA Sales List V1 — Domain & Component Contracts (JAA-S0-05)", () 
       fireEvent.change(statusSelect, { target: { value: "Partiellement payée" } });
 
       expect(screen.getAllByText("Partiellement payée").length).toBeGreaterThan(0);
-      expect(screen.queryByText("VTE-0024")).not.toBeInTheDocument(); // VTE-0024 is Payée
+      expect(screen.queryByText("VTE-0024")).not.toBeInTheDocument();
     });
 
     it("restores full dataset when clicking 'Réinitialiser'", () => {
@@ -224,11 +276,17 @@ describe("JAAMA Sales List V1 — Domain & Component Contracts (JAA-S0-05)", () 
   });
 
   describe("Business Empty State (0 Sales)", () => {
-    it("renders onboarding empty state instead of sea of zero table", () => {
+    it("renders onboarding empty state WITHOUT 4 zero KPI summary cards", () => {
       render(<SalesListView salesState="empty" />);
 
       expect(screen.getByText("Aucune vente pour le moment")).toBeInTheDocument();
       expect(screen.getByRole("button", { name: /Créer ma première vente/i })).toBeInTheDocument();
+
+      // Assert zero KPI summary cards are NOT rendered
+      expect(screen.queryByText("VENTES")).not.toBeInTheDocument();
+      expect(screen.queryByText("MONTANT DES VENTES")).not.toBeInTheDocument();
+      expect(screen.queryByText("ENCAISSÉ")).not.toBeInTheDocument();
+      expect(screen.queryByText("À ENCAISSER")).not.toBeInTheDocument();
       expect(screen.queryByRole("table")).not.toBeInTheDocument();
     });
   });
@@ -242,10 +300,13 @@ describe("JAAMA Sales List V1 — Domain & Component Contracts (JAA-S0-05)", () 
       expect(screen.queryByRole("table")).not.toBeInTheDocument();
     });
 
-    it("renders section-level error with retry button", () => {
+    it("renders section-level error with a real accessible retry action", () => {
       render(<SalesListView salesState="error" />);
 
       expect(screen.getByText("Erreur de chargement des ventes")).toBeInTheDocument();
+      const retryAction = screen.getByRole("link", { name: /Réessayer/i });
+      expect(retryAction).toBeInTheDocument();
+      expect(retryAction).toHaveAttribute("href", "/ventes");
       expect(screen.queryByRole("table")).not.toBeInTheDocument();
     });
   });
