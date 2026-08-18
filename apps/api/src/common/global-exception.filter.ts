@@ -3,6 +3,21 @@ import { Request, Response } from "express";
 import { createApiErrorEnvelope } from "@jaama/validation";
 import { logger } from "@jaama/observability";
 
+export function sanitizeLogMessage(input: string): string {
+  if (!input) return input;
+  let sanitized = input;
+  // Redact database & service URIs containing credentials
+  sanitized = sanitized.replace(
+    /[a-z0-9+.-]+:\/\/[^\s:@]+:[^\s:@]+@[^\s:@/]+(?::\d+)?\/[^\s'"]+/gi,
+    "postgresql://[REDACTED_USER]:[REDACTED_PASSWORD]@[REDACTED_HOST]/[REDACTED_DB]"
+  );
+  // Redact Bearer tokens
+  sanitized = sanitized.replace(/Bearer\s+[A-Za-z0-9._~+-]+/gi, "Bearer [REDACTED_TOKEN]");
+  // Redact inline passwords and secrets
+  sanitized = sanitized.replace(/(password|secret|token|authorization|cred|key)=([^\s&]+)/gi, "$1=[REDACTED]");
+  return sanitized;
+}
+
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
   public catch(exception: unknown, host: ArgumentsHost) {
@@ -74,16 +89,23 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         errMsg.includes("dépasser") ||
         errMsg.includes("spécifier") ||
         errMsg.includes("entier") ||
-        errMsg.includes("quantité")
+        errMsg.includes("quantité") ||
+        errMsg.includes("Client introuvable")
       ) {
         status = HttpStatus.BAD_REQUEST;
         code = "BAD_REQUEST";
         message = errMsg;
       } else {
-        // UNKNOWN INFRASTRUCTURE / DATABASE ERROR: MUST NEVER LEAK INTERNAL EXCEPTION MESSAGE!
-        console.error("FILTER CAUGHT UNHANDLED EXCEPTION:", exception);
+        // UNKNOWN INFRASTRUCTURE / DATABASE ERROR: MUST NEVER LEAK INTERNAL EXCEPTION MESSAGE OR SECRETS!
+        if (process.env.NODE_ENV !== "production") {
+          console.error("FILTER CAUGHT UNHANDLED EXCEPTION:", sanitizeLogMessage(errMsg));
+        }
         logger.error(`[GlobalExceptionFilter] Infrastructure error suppressed`, {
-          context: { requestId, error: errMsg, stack: (exception as any)?.stack },
+          context: {
+            requestId,
+            error: sanitizeLogMessage(errMsg),
+            stack: sanitizeLogMessage((exception as any)?.stack || ""),
+          },
         });
         status = HttpStatus.INTERNAL_SERVER_ERROR;
         code = "INTERNAL_SERVER_ERROR";

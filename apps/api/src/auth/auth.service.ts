@@ -1,4 +1,5 @@
 import { Injectable, BadRequestException, UnauthorizedException } from "@nestjs/common";
+import { randomBytes, randomUUID } from "crypto";
 import { prisma as defaultPrisma, PrismaSessionRepository } from "@jaama/database";
 import { hashPassword, verifyPassword } from "@jaama/auth";
 import { User, Session } from "@jaama/types";
@@ -12,6 +13,13 @@ export class RegisterDto {
 export class LoginDto {
   email!: string;
   password!: string;
+}
+
+/**
+ * Generates a cryptographically secure 256-bit entropy bearer token (CSPRNG).
+ */
+export function generateCsprngSessionToken(): string {
+  return randomBytes(32).toString("base64url");
 }
 
 @Injectable()
@@ -30,7 +38,7 @@ export class AuthService {
     }
 
     const passwordHash = await hashPassword(dto.password);
-    const userId = `user-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
+    const userId = `user-${randomUUID()}`;
 
     const userRow = await prismaClient.$transaction(async (tx) => {
       const u = await tx.user.create({
@@ -53,7 +61,7 @@ export class AuthService {
       return u;
     });
 
-    const token = `tok-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const token = generateCsprngSessionToken();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const session = await this.sessionRepo.createSession(userRow.id, token, expiresAt);
 
@@ -87,7 +95,7 @@ export class AuthService {
       throw new UnauthorizedException(GENERIC_ERROR);
     }
 
-    const token = `tok-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const token = generateCsprngSessionToken();
     const expiresAt = new Date(Date.now() + 24 * 60 * 60 * 1000);
     const session = await this.sessionRepo.createSession(userRow.id, token, expiresAt);
 

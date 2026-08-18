@@ -55,6 +55,7 @@ export interface PosConfirmedSaleSummary {
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   saleStatus: SaleStatus;
+  isSimulated?: boolean;
 }
 
 export interface PosState {

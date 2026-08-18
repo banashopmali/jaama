@@ -1,8 +1,10 @@
 import {
   PaymentMethod,
+  PaymentStatus,
   SaleListItem,
   SalesFilterState,
   SalesSummaryData,
+  SaleStatus,
 } from "./sales.types";
 
 /**
@@ -19,6 +21,40 @@ export function formatMoney(amount: number, currency = "XOF"): string {
     return `${formattedNumber} FCFA`;
   }
   return `${formattedNumber} ${currency}`;
+}
+
+/**
+ * Translates backend SaleStatus enum into user-facing presentation string.
+ */
+export function mapBackendSaleStatus(status: string): SaleStatus {
+  switch (status) {
+    case "COMPLETED":
+      return "Terminée";
+    case "CANCELLED":
+      return "Annulée";
+    case "REFUNDED":
+      return "Remboursée";
+    default:
+      return "Terminée";
+  }
+}
+
+/**
+ * Translates backend PaymentStatus enum into user-facing presentation string.
+ */
+export function mapBackendPaymentStatus(status: string): PaymentStatus {
+  switch (status) {
+    case "PAID":
+      return "Payée";
+    case "PARTIALLY_PAID":
+      return "Partiellement payée";
+    case "TO_COLLECT":
+      return "À encaisser";
+    case "REFUNDED":
+      return "Remboursée";
+    default:
+      return "À encaisser";
+  }
 }
 
 /**

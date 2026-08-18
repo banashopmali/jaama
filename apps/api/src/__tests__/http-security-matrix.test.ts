@@ -4,6 +4,8 @@ import { INestApplication } from "@nestjs/common";
 import request from "supertest";
 import { prisma, seedPostgresDatabase, PrismaSessionRepository } from "@jaama/database";
 import { AppModule } from "../app.module";
+import { generateCsprngSessionToken } from "../auth/auth.service";
+import { sanitizeLogMessage } from "../common/global-exception.filter";
 
 describe("JAAMA NestJS Real HTTP Security Matrix Integration Tests (JAA-S0-13 / JAA-S0-16)", () => {
   let app: INestApplication;
@@ -32,41 +34,75 @@ describe("JAAMA NestJS Real HTTP Security Matrix Integration Tests (JAA-S0-13 / 
     validToken = sess1.token;
 
     // 2. Disabled User Session
-    const disabledUser = await prisma.user.create({
-      data: { id: "user-disabled", email: "disabled@test.com", name: "Disabled User", status: "disabled" },
+    const disabledUser = await prisma.user.upsert({
+      where: { id: "user-disabled" },
+      update: { status: "disabled" },
+      create: { id: "user-disabled", email: "disabled@test.com", name: "Disabled User", status: "disabled" },
     });
     const sess2 = await sessionRepo.createSession(disabledUser.id, "token-disabled-user", new Date(Date.now() + 3600000));
     disabledUserToken = sess2.token;
 
     // 3. Non-Member User Session
-    const nonMemberUser = await prisma.user.create({
-      data: { id: "user-non-member", email: "nonmember@test.com", name: "Non Member", status: "active" },
+    const nonMemberUser = await prisma.user.upsert({
+      where: { id: "user-non-member" },
+      update: { status: "active" },
+      create: { id: "user-non-member", email: "nonmember@test.com", name: "Non Member", status: "active" },
     });
     const sess3 = await sessionRepo.createSession(nonMemberUser.id, "token-non-member", new Date(Date.now() + 3600000));
     nonMemberToken = sess3.token;
 
     // 4. Employe Role Session (No sales.create permission)
-    const employeUser = await prisma.user.create({
-      data: { id: "user-employe", email: "employe@test.com", name: "Employe User", status: "active" },
+    const employeUser = await prisma.user.upsert({
+      where: { id: "user-employe" },
+      update: { status: "active" },
+      create: { id: "user-employe", email: "employe@test.com", name: "Employe User", status: "active" },
     });
-    await prisma.membership.create({
-      data: { id: "org-diallo:user-employe", organizationId: "org-diallo", userId: employeUser.id, role: "employe", status: "active" },
+    await prisma.membership.upsert({
+      where: { id: "org-diallo:user-employe" },
+      update: { role: "employe", status: "active" },
+      create: { id: "org-diallo:user-employe", organizationId: "org-diallo", userId: employeUser.id, role: "employe", status: "active" },
     });
     const sess4 = await sessionRepo.createSession(employeUser.id, "token-employe", new Date(Date.now() + 3600000));
     employeToken = sess4.token;
 
-    // 5. Create Org B & Org B Product for cross-tenant test
-    await prisma.organization.create({
-      data: { id: "org-b", name: "Org B", slug: "org-b", status: "active" },
+    // 5. Create Org B & Org B Product & Customer for cross-tenant tests
+    const orgB = await prisma.organization.upsert({
+      where: { id: "org-b" },
+      update: { status: "active" },
+      create: { id: "org-b", name: "Org B", slug: "org-b", status: "active" },
     });
-    await prisma.product.create({
-      data: { id: "prod-b", organizationId: "org-b", sku: "PROD-B", name: "Prod B", category: "Test", unitPriceMinor: 1000 },
+    await prisma.product.upsert({
+      where: { organizationId_id: { organizationId: orgB.id, id: "prod-b" } },
+      update: {},
+      create: { id: "prod-b", organizationId: orgB.id, sku: "PROD-B", name: "Prod B", category: "Test", unitPriceMinor: 1000 },
+    });
+    await prisma.customer.upsert({
+      where: { organizationId_id: { organizationId: orgB.id, id: "cust-b" } },
+      update: {},
+      create: { id: "cust-b", organizationId: orgB.id, name: "Customer Org B", phone: "+22370000002" },
     });
   });
 
   afterAll(async () => {
     if (app) await app.close();
     await prisma.$disconnect();
+  });
+
+  it("proves session tokens are generated using CSPRNG with 256-bit entropy", () => {
+    const token1 = generateCsprngSessionToken();
+    const token2 = generateCsprngSessionToken();
+
+    expect(token1).not.toBe(token2);
+    expect(token1.length).toBeGreaterThanOrEqual(40); // Base64url 32 bytes = 43 chars
+    expect(token1).not.toContain("tok-"); // Must not be timestamp based
+  });
+
+  it("sanitizes database URIs and sensitive credentials in log text", () => {
+    const secretUri = "postgresql://jaama_user:SUPER_SECRET_PASSWORD@localhost:5432/jaama_db";
+    const sanitized = sanitizeLogMessage(secretUri);
+
+    expect(sanitized).not.toContain("SUPER_SECRET_PASSWORD");
+    expect(sanitized).toContain("[REDACTED_PASSWORD]");
   });
 
   it("401 UNAUTHORIZED when no authorization header is provided", async () => {
@@ -143,6 +179,25 @@ describe("JAAMA NestJS Real HTTP Security Matrix Integration Tests (JAA-S0-13 / 
 
     expect(res.status).toBe(400);
     expect(res.body.error.message).toContain("Produit introuvable ou inactif dans cette organisation");
+  });
+
+  it("400 BAD REQUEST when referencing cross-tenant Customer belonging to Org B", async () => {
+    const res = await request(app.getHttpServer())
+      .post("/api/v1/sales")
+      .set("Authorization", `Bearer ${validToken}`)
+      .set("X-Organization-ID", "org-diallo")
+      .send({
+        customerId: "cust-b", // Belongs to Org B!
+        lines: [{ productId: "prod-001", quantity: 1 }],
+        payments: [{ method: "cash", amountMinor: 500 }],
+      });
+
+    expect(res.status).toBe(400);
+    expect(res.body.error.message).toContain("Client introuvable ou n'appartient pas à votre organisation");
+
+    // Assert ZERO sales created
+    const salesCount = await prisma.sale.count({ where: { organizationId: "org-diallo" } });
+    expect(salesCount).toBe(0);
   });
 
   it("400 BAD REQUEST when line quantity is zero or negative", async () => {
@@ -224,11 +279,11 @@ describe("JAAMA NestJS Real HTTP Security Matrix Integration Tests (JAA-S0-13 / 
     expect(res2.body.error.code).toBe("IDEMPOTENCY_CONFLICT");
   });
 
-  it("500 INTERNAL_SERVER_ERROR hides internal exception details from client on unexpected error", async () => {
-    // Force an unexpected runtime exception in controller/service
+  it("500 INTERNAL_SERVER_ERROR hides internal exception details from client on unexpected error and sanitizes credentials", async () => {
+    // Force an unexpected runtime exception containing connection string credentials
     const originalMethod = (prisma as any).$transaction;
     (prisma as any).$transaction = async () => {
-      throw new Error("FATAL_SECRET_POSTGRES_INTERNAL_CONNECTION_STRING_EXPOSURE_PREVENTION_TEST");
+      throw new Error("FATAL_SECRET_POSTGRES_INTERNAL_CONNECTION_STRING_EXPOSURE_postgresql://jaama_user:SUPER_SECRET_PASSWORD@localhost:5432/jaama_db");
     };
 
     try {
@@ -241,7 +296,8 @@ describe("JAAMA NestJS Real HTTP Security Matrix Integration Tests (JAA-S0-13 / 
       expect(res.status).toBe(500);
       expect(res.body.error.code).toBe("INTERNAL_SERVER_ERROR");
       expect(res.body.error.message).toBe("Une erreur interne est survenue.");
-      expect(res.body.error.message).not.toContain("FATAL_SECRET");
+      expect(res.body.error.message).not.toContain("SUPER_SECRET_PASSWORD");
+      expect(JSON.stringify(res.body)).not.toContain("SUPER_SECRET_PASSWORD");
     } finally {
       (prisma as any).$transaction = originalMethod;
     }

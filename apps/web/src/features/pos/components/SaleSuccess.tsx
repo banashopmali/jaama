@@ -21,8 +21,8 @@ export const SaleSuccess: React.FC<SaleSuccessProps> = ({ summary, onNewSale }) 
 
       {/* Main Title & Reference */}
       <div className="space-y-1">
-        <Badge variant="brand" size="sm" className="mb-2 uppercase tracking-wide">
-          SIMULATION FRONTEND — AUCUNE PERSISTANCE SERVEUR
+        <Badge variant={summary.isSimulated ? "warning" : "success"} size="sm" className="mb-2 uppercase tracking-wide">
+          {summary.isSimulated ? "SIMULATION FRONTEND — MOCK TEST ADAPTER" : "VENTE PERSISTÉE — CONFIRMÉE PAR LE SERVEUR"}
         </Badge>
         <h2 className="text-2xl font-extrabold text-content-primary tracking-tight font-sans">
           Vente enregistrée

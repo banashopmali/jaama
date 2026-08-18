@@ -13,7 +13,7 @@ describe("JAAMA Security Attack Matrix Integration Tests against PostgreSQL (JAA
     // Create session token for Hamidou in PostgreSQL
     await sessionRepo.createSession("user-hamidou", "token-hamidou-123", new Date(Date.now() + 3600000));
 
-    // Create Org B (Mali Tech) and Org B Product
+    // Create Org B (Mali Tech) and Org B Product & Customer
     await prisma.organization.create({
       data: {
         id: "org-mali-tech",
@@ -31,6 +31,15 @@ describe("JAAMA Security Attack Matrix Integration Tests against PostgreSQL (JAA
         name: "Produit Org B",
         category: "Test",
         unitPriceMinor: 2000,
+      },
+    });
+
+    await prisma.customer.create({
+      data: {
+        id: "cust-org-b",
+        organizationId: "org-mali-tech",
+        name: "Client Org B",
+        phone: "+22370000002",
       },
     });
   });
@@ -55,6 +64,41 @@ describe("JAAMA Security Attack Matrix Integration Tests against PostgreSQL (JAA
     await expect(
       salesService.createSale(userContext, payload, prisma)
     ).rejects.toThrow("Produit introuvable ou inactif dans cette organisation");
+  });
+
+  it("REJECTS cross-tenant Customer reference in CreateSale command with 400 error and ZERO database mutations", async () => {
+    const userContext: UserContext = {
+      actorId: "user-hamidou",
+      organizationId: "org-diallo", // Org A
+      membershipId: "org-diallo:user-hamidou",
+      permissions: ["sales.create"],
+    };
+
+    const payload = {
+      customerId: "cust-org-b", // Belongs to Org B!
+      lines: [{ productId: "prod-001", quantity: 1 }],
+      payments: [{ method: "cash", amountMinor: 500 }],
+    };
+
+    await expect(
+      salesService.createSale(userContext, payload, prisma)
+    ).rejects.toThrow("Client introuvable ou n'appartient pas à votre organisation");
+
+    // Verify ZERO mutations in PostgreSQL
+    const salesCount = await prisma.sale.count({ where: { organizationId: "org-diallo" } });
+    expect(salesCount).toBe(0);
+
+    const paymentsCount = await prisma.payment.count({ where: { organizationId: "org-diallo" } });
+    expect(paymentsCount).toBe(0);
+
+    const stockMovements = await prisma.stockMovement.count({ where: { organizationId: "org-diallo" } });
+    expect(stockMovements).toBe(0);
+
+    const auditCount = await prisma.auditEvent.count({ where: { organizationId: "org-diallo" } });
+    expect(auditCount).toBe(0);
+
+    const outboxCount = await prisma.outboxEvent.count({ where: { organizationId: "org-diallo" } });
+    expect(outboxCount).toBe(0);
   });
 
   it("REJECTS negative or zero quantity in CreateSale command", async () => {

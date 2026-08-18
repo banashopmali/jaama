@@ -4,16 +4,33 @@ import React, { useReducer, useTransition } from "react";
 import { PaymentMethod } from "../../sales/sales.types";
 import { posInitialState, posReducer } from "../pos.reducer";
 import { mockPosProducts } from "../pos.mock";
-import { PosCustomer, PosPaymentAllocation, PosProduct } from "../pos.types";
+import { PosCartLine, PosCustomer, PosPaymentAllocation, PosProduct, PosConfirmedSaleSummary } from "../pos.types";
 import { PosHeader } from "./PosHeader";
 import { ProductCatalog } from "./ProductCatalog";
 import { CartPanel } from "./CartPanel";
 import { CheckoutView } from "./CheckoutView";
 import { SaleSuccess } from "./SaleSuccess";
-import { submitSaleToApi } from "../pos.api";
+import { PosApiContext, submitSaleToApi, mockSubmitSaleToApi } from "../pos.api";
 import { calculateSubtotal, calculateTotal, validatePosCheckout } from "../pos.utils";
 
-export const PosInteractiveSection: React.FC = () => {
+export interface PosInteractiveSectionProps {
+  apiContext?: PosApiContext;
+  apiAdapter?: (
+    cart: PosCartLine[],
+    discountAmount: number,
+    paymentMethod: PaymentMethod | null,
+    paidAmountInput: number,
+    cashReceivedInput: number,
+    allocations: PosPaymentAllocation[],
+    idempotencyKey: string,
+    customerId?: string | null
+  ) => Promise<PosConfirmedSaleSummary>;
+}
+
+export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
+  apiContext,
+  apiAdapter,
+}) => {
   const [state, dispatch] = useReducer(posReducer, posInitialState);
   const [isPending, startTransition] = useTransition();
 
@@ -37,16 +54,41 @@ export const PosInteractiveSection: React.FC = () => {
     dispatch({ type: "SUBMIT_START" });
     startTransition(async () => {
       try {
-        const confirmedSale = await submitSaleToApi(
-          state.cart,
-          state.discountAmount,
-          state.paymentMethod,
-          state.paidAmountInput,
-          state.cashReceivedInput,
-          state.paymentAllocations,
-          state.idempotencyKey,
-          state.customer.id
-        );
+        let confirmedSale: PosConfirmedSaleSummary;
+        if (apiAdapter) {
+          confirmedSale = await apiAdapter(
+            state.cart,
+            state.discountAmount,
+            state.paymentMethod,
+            state.paidAmountInput,
+            state.cashReceivedInput,
+            state.paymentAllocations,
+            state.idempotencyKey,
+            state.customer.id
+          );
+        } else if (apiContext) {
+          confirmedSale = await submitSaleToApi(
+            state.cart,
+            state.discountAmount,
+            state.paymentMethod,
+            state.paidAmountInput,
+            state.cashReceivedInput,
+            state.paymentAllocations,
+            state.idempotencyKey,
+            state.customer.id,
+            apiContext
+          );
+        } else {
+          // Fallback test adapter when no live API context is injected
+          confirmedSale = mockSubmitSaleToApi(
+            state.cart,
+            state.discountAmount,
+            state.paymentMethod,
+            state.paidAmountInput,
+            state.cashReceivedInput,
+            state.paymentAllocations
+          );
+        }
         dispatch({ type: "SUBMIT_SUCCESS", payload: confirmedSale });
       } catch (err: any) {
         const errorMsg = err?.message || "Erreur lors de la validation de la vente sur le serveur.";

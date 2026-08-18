@@ -94,7 +94,24 @@ export class SalesService {
         WHERE "id" = ${organizationId}
       `;
 
-      // 4. RESOURCE OWNERSHIP & PRODUCT VALIDATION
+      // 4. RESOURCE OWNERSHIP (CUSTOMER & PRODUCT TENANT ISOLATION)
+      if (command.customerId) {
+        const customer = await tx.customer.findUnique({
+          where: {
+            organizationId_id: {
+              organizationId,
+              id: command.customerId,
+            },
+          },
+        });
+
+        if (!customer) {
+          throw new BadRequestException(
+            `Client introuvable ou n'appartient pas à votre organisation (id: ${command.customerId}).`
+          );
+        }
+      }
+
       const saleLines: SaleLine[] = [];
       const stockUpdates: { productId: string; quantity: number }[] = [];
 

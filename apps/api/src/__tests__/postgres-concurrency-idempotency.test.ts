@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
+import { ConflictException } from "@nestjs/common";
 import { prisma, seedPostgresDatabase } from "@jaama/database";
 import { SalesService } from "../sales/sales.service";
 import { UserContext } from "@jaama/types";
 
-describe("JAAMA Concurrent Same-Key Idempotency & Reference Integrity against PostgreSQL (JAA-S0-14 / JAA-S0-15)", () => {
+describe("JAAMA Concurrent Same-Key Idempotency & Reference Integrity against PostgreSQL (JAA-S0-14 / JAA-S0-15 / Option B)", () => {
   const salesService = new SalesService();
 
   const userContext: UserContext = {
@@ -21,11 +22,11 @@ describe("JAAMA Concurrent Same-Key Idempotency & Reference Integrity against Po
     await prisma.$disconnect();
   });
 
-  it("executes two SIMULTANEOUS create-sale requests with SAME idempotency key: 1 Sale created, 1 stock decrement, both return same result", async () => {
+  it("executes two SIMULTANEOUS create-sale requests with SAME key (OPTION B): 1 succeeds (201), 1 receives deterministic 409 Conflict, exactly 1 Sale persisted, and sequential replay returns cached Sale", async () => {
     const payload = {
       lines: [{ productId: "prod-001", quantity: 2 }], // Unit price 500 = 1000 FCFA
       payments: [{ method: "cash", amountMinor: 1000 }],
-      idempotencyKey: "same-key-concurrency-001",
+      idempotencyKey: "same-key-concurrency-option-b-001",
     };
 
     // Execute 2 concurrent requests with the SAME key
@@ -35,21 +36,49 @@ describe("JAAMA Concurrent Same-Key Idempotency & Reference Integrity against Po
     ]);
 
     const fulfilled = results.filter((r) => r.status === "fulfilled") as PromiseFulfilledResult<any>[];
-    expect(fulfilled.length).toBeGreaterThanOrEqual(1);
+    const rejected = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
 
-    // Assert only 1 Sale record was created in PostgreSQL
+    // Exactly 1 request fulfilled, 1 rejected
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(1);
+
+    // Rejected request must be ConflictException (409), not unhandled P2002
+    expect(rejected[0].reason).toBeInstanceOf(ConflictException);
+    expect((rejected[0].reason as ConflictException).getStatus()).toBe(409);
+
+    const firstSale = fulfilled[0].value;
+    expect(firstSale.reference).toBe("VTE-0025");
+
+    // Exact ledger integrity counts in PostgreSQL
     const salesCount = await prisma.sale.count({ where: { organizationId: "org-diallo" } });
     expect(salesCount).toBe(1);
 
-    // Assert only 1 stock movement created for prod-001
+    const paymentsCount = await prisma.payment.count({ where: { organizationId: "org-diallo" } });
+    expect(paymentsCount).toBe(1);
+
     const movements = await prisma.stockMovement.findMany({ where: { organizationId: "org-diallo" } });
     expect(movements.length).toBe(1);
 
-    // Assert available quantity decremented by exactly 2 (45 -> 43)
+    const audits = await prisma.auditEvent.count({ where: { organizationId: "org-diallo" } });
+    expect(audits).toBe(1);
+
+    const outbox = await prisma.outboxEvent.count({ where: { organizationId: "org-diallo" } });
+    expect(outbox).toBe(1);
+
+    // Balance decremented by exactly 2 (45 -> 43)
     const balance = await prisma.inventoryBalance.findUnique({
       where: { organizationId_productId: { organizationId: "org-diallo", productId: "prod-001" } },
     });
     expect(balance?.availableQuantity).toBe(43);
+
+    // Sequential replay with same key returns exact cached Sale response
+    const replayedSale = await salesService.createSale(userContext, payload, prisma);
+    expect(replayedSale.id).toBe(firstSale.id);
+    expect(replayedSale.reference).toBe(firstSale.reference);
+
+    // Database counts remain unchanged after replay
+    const replayedSalesCount = await prisma.sale.count({ where: { organizationId: "org-diallo" } });
+    expect(replayedSalesCount).toBe(1);
   });
 
   it("executes two SIMULTANEOUS independent sales concurrently: both succeed, generating 2 DISTINCT references without race condition", async () => {

@@ -13,6 +13,7 @@ import {
 } from "../features/pos/pos.utils";
 import { PosView } from "../features/pos/components/PosView";
 import { mockPosProducts } from "../features/pos/pos.mock";
+import { submitSaleToApi } from "../features/pos/pos.api";
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
@@ -224,8 +225,14 @@ describe("JAAMA New Sale / POS V1 — Integrity & Behavior Contracts (JAA-S0-06)
 
       await waitFor(() => {
         expect(screen.getByText("VTE-0025")).toBeInTheDocument();
-        expect(screen.getByText("SIMULATION FRONTEND — AUCUNE PERSISTANCE SERVEUR")).toBeInTheDocument();
+        expect(screen.getByText("SIMULATION FRONTEND — MOCK TEST ADAPTER")).toBeInTheDocument();
       });
+    });
+
+    it("fails closed when submitSaleToApi is called without authenticated context or when network fails", async () => {
+      await expect(
+        submitSaleToApi([], 0, "cash", 0, 0, [], "idempotency-key", null, undefined as any)
+      ).rejects.toThrow("Contexte d'authentification POS manquant");
     });
   });
 
