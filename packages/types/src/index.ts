@@ -136,6 +136,40 @@ export interface Payment {
   recordedAt: Date;
 }
 
+export interface AuditEvent {
+  id: string;
+  organizationId: string;
+  actorId: string;
+  action: string;
+  resourceType: string;
+  resourceId: string;
+  metadataJson?: string;
+  requestId?: string;
+  createdAt: Date;
+}
+
+export interface OutboxEvent {
+  id: string;
+  organizationId: string;
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  payloadJson: string;
+  status: "PENDING" | "PROCESSED" | "FAILED";
+  createdAt: Date;
+}
+
+export interface IdempotencyRecord {
+  id: string;
+  organizationId: string;
+  operation: string;
+  idempotencyKey: string;
+  requestHash: string;
+  status: "PROCESSING" | "COMPLETED";
+  responseJson?: string;
+  createdAt: Date;
+}
+
 export interface CreateSaleCommand {
   organizationId: string;
   sellerUserId: string;
