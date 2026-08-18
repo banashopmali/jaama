@@ -22,7 +22,7 @@ Ce document consigne les décisions de design et d'architecture d'interface vali
 - Présentation en grilles réactives adaptées aux terminaux tactiles (Desktop 4-cols, Tablette 2x2, Mobile cartes/listes).
 - Gestion native des 4 états UI (*Populated*, *Guided Empty*, *Skeleton Loading*, *Partial Section Error*).
 
-### JAAMA SALES LIST V1 — LOCKED DESIGN REFERENCE
+### JAAMA SALES LIST V1 — DESIGN LOCKED & ENGINEERING IMPLEMENTED IN JAA-S0-05
 - **Séparation stricte entre Statut de Vente et Statut de Paiement (`SALE != PAYMENT`)** :
   - **STATUT DE VENTE (SALE STATUS)** :
     - `Terminée` (Vente validée et livraison/délivrance effectuée)
@@ -35,7 +35,11 @@ Ce document consigne les décisions de design et d'architecture d'interface vali
     - `À encaisser` (Paiement en attente d'encaissement / crédit client)
     - `Remboursée` (Fonds restitués au client)
 - **Règle Métier d'Indépendance** : Une vente peut être commercialement `Terminée` tout en ayant un statut de paiement `Partiellement payée` (ex. Total vente : 100 000 FCFA, Encaissé : 70 000 FCFA, Reste à encaisser : 30 000 FCFA -> Statut Vente = `Terminée`, Statut Paiement = `Partiellement payée`).
-- Badges de statut sémantiques discrets.
+- Tableau desktop réactif à 10 colonnes canoniques et cartes mobiles adaptées 390px.
+- 4 cartes de synthèse financière (`Ventes`, `Montant des ventes`, `Encaissé`, `À encaisser`).
+- Filtrage réactif par recherche textuelle, statut de paiement et mode de paiement sans appel backend.
+- Prise en charge des clients au comptoir (`Client comptoir`).
+- Gestion native des 4 états UI (*Populated*, *Guided Empty*, *No Results*, *Skeleton Loading*, *Section Error*).
 
 ---
 
