@@ -11,8 +11,11 @@
   "dependencies": {
     "@jaama/api": "workspace:*",
     "@jaama/auth": "workspace:*",
+    "@jaama/config": "workspace:*",
     "@jaama/database": "workspace:*",
-    "@jaama/types": "workspace:*"
+    "@jaama/observability": "workspace:*",
+    "@jaama/types": "workspace:*",
+    "@jaama/validation": "workspace:*"
   },
   "devDependencies": {
     "typescript": "^5.6.3",

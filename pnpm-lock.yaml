@@ -168,7 +168,14 @@ importers:
         specifier: ^2.1.9
         version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)
 
-  packages/config: {}
+  packages/config:
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)
 
   packages/database:
     dependencies:
@@ -193,6 +200,28 @@ importers:
         version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)
 
   packages/testing:
+    dependencies:
+      '@jaama/api':
+        specifier: workspace:*
+        version: link:../../apps/api
+      '@jaama/auth':
+        specifier: workspace:*
+        version: link:../auth
+      '@jaama/config':
+        specifier: workspace:*
+        version: link:../config
+      '@jaama/database':
+        specifier: workspace:*
+        version: link:../database
+      '@jaama/observability':
+        specifier: workspace:*
+        version: link:../observability
+      '@jaama/types':
+        specifier: workspace:*
+        version: link:../types
+      '@jaama/validation':
+        specifier: workspace:*
+        version: link:../validation
     devDependencies:
       typescript:
         specifier: ^5.6.3
