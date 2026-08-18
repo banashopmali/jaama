@@ -41,6 +41,19 @@ Ce document consigne les décisions de design et d'architecture d'interface vali
 - Prise en charge des clients au comptoir (`Client comptoir`).
 - Gestion native des 4 états UI (*Populated*, *Guided Empty*, *No Results*, *Skeleton Loading*, *Section Error*).
 
+### JAAMA NEW SALE / POS V1 — DESIGN LOCKED & ENGINEERING IMPLEMENTED IN JAA-S0-06
+- **Terminal de Saisie de Vente & Point de Vente (POS)** : Route `/ventes/nouvelle` héritant de l'AppShell permanent.
+- Layout 2 panneaux desktop (Catalogue à gauche, Panier & Règlement à droite) et machine d'état mobile par étapes (`catalog` $\rightarrow$ `cart` $\rightarrow$ `checkout` $\rightarrow$ `success`).
+- Recherche locale réactive par nom ou SKU et filtrage tactile par catégories.
+- Cartes produits interactives avec indicateurs visuels de stock (`Rupture de stock` désactivée, `Stock faible`, `Stock disponible`).
+- Contrôle strict des quantités et protection contre le dépassement du stock disponible.
+- Client par défaut `Client comptoir` (vente au comptoir) avec possibilité d'associer un client enregistré.
+- Sélection tactile des modes de règlement (`Espèces`, `Wave`, `Orange Money`, `Virement`, `Carte`, `Crédit`, `Mixte`).
+- Calcul de monnaie rendue en espèces et soutien des règlements mixtes multi-modes.
+- Dérivation automatique du statut de paiement (`Payée`, `Partiellement payée`, `À encaisser`) respectant l'invariant `SALE != PAYMENT`.
+- Récapitulatif avant confirmation et écran de confirmation de vente enregistrée (`VTE-0025`).
+- Gestion native des états UI (*Ready*, *Empty Catalog*, *Skeleton Loading*, *Local Error*).
+
 ---
 
 ## 2. Charte Visuelle & Identité
