@@ -90,23 +90,34 @@ export function filterSales(
 }
 
 /**
- * Computes exact summary metrics over a dataset of sales.
+ * Computes summary metrics over a dataset of sales.
+ *
+ * COUNT SEMANTICS:
+ * - Cancelled sales (`saleStatus === "Annulée"`) are voided business events.
+ *   They do NOT contribute to `totalSalesCount`, `totalSalesAmount`,
+ *   `totalCollectedAmount`, or `totalToCollectAmount`.
+ * - Refunded sales (`saleStatus === "Remboursée"`) maintain audit visibility
+ *   where total amount and paid/collected amounts balance out to net 0 collected.
  */
 export function calculateSalesSummary(sales: SaleListItem[]): SalesSummaryData {
+  let totalSalesCount = 0;
   let totalSalesAmount = 0;
   let totalCollectedAmount = 0;
   let totalToCollectAmount = 0;
 
   for (const sale of sales) {
-    if (sale.saleStatus !== "Annulée") {
-      totalSalesAmount += sale.totalAmount;
-      totalCollectedAmount += sale.paidAmount;
-      totalToCollectAmount += sale.remainingAmount;
+    if (sale.saleStatus === "Annulée") {
+      continue; // Voided transactions are excluded from active sales counts & financial totals
     }
+
+    totalSalesCount += 1;
+    totalSalesAmount += sale.totalAmount;
+    totalCollectedAmount += sale.paidAmount;
+    totalToCollectAmount += sale.remainingAmount;
   }
 
   return {
-    totalSalesCount: sales.length,
+    totalSalesCount,
     totalSalesAmount,
     totalCollectedAmount,
     totalToCollectAmount,

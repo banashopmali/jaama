@@ -81,8 +81,10 @@ export const SalesMobileList: React.FC<SalesMobileListProps> = ({ sales }) => {
               <IconButton
                 variant="ghost"
                 size="sm"
-                aria-label={`Consulter la vente ${sale.reference}`}
-                icon={<Eye className="w-3.5 h-3.5 text-content-secondary" />}
+                disabled
+                title="Disponible prochainement"
+                aria-label={`Détail de la vente ${sale.reference} bientôt disponible`}
+                icon={<Eye className="w-3.5 h-3.5 text-content-muted" />}
               />
             </div>
           </div>

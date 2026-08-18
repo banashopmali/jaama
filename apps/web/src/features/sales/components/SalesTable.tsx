@@ -106,13 +106,15 @@ export const SalesTable: React.FC<SalesTableProps> = ({ sales }) => {
                 {sale.seller.name}
               </td>
 
-              {/* 10. Actions */}
+              {/* 10. Actions (Désactivé jusqu'à JAA-S0-06+) */}
               <td className="py-3.5 px-4 text-right whitespace-nowrap">
                 <IconButton
                   variant="ghost"
                   size="sm"
-                  aria-label={`Consulter la vente ${sale.reference}`}
-                  icon={<Eye className="w-4 h-4 text-content-secondary" />}
+                  disabled
+                  title="Disponible prochainement"
+                  aria-label={`Détail de la vente ${sale.reference} bientôt disponible`}
+                  icon={<Eye className="w-4 h-4 text-content-muted" />}
                 />
               </td>
             </tr>

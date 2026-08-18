@@ -25,7 +25,7 @@ export default function NouvelleVentePlaceholderPage() {
             Nouvelle Vente / Point de Vente (POS)
           </h1>
           <p className="text-sm text-content-secondary mt-1">
-            Interface d&apos;encaissement direct et de création de transactions
+            Interface de création de vente et de gestion du règlement
           </p>
         </div>
 
@@ -79,7 +79,7 @@ export default function NouvelleVentePlaceholderPage() {
         <Card variant="subtle" className="p-5 space-y-2">
           <div className="flex items-center gap-2 text-xs font-bold text-content-primary">
             <Clock className="w-4 h-4 text-content-brand" />
-            <span>Modes d&apos;Encaissement Rapprochement</span>
+            <span>Modes de règlement</span>
           </div>
           <p className="text-xs text-content-secondary leading-relaxed">
             Saisie des règlements en espèces, Wave, Orange Money, carte et enregistrement des ventes à crédit.

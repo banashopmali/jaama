@@ -20,30 +20,22 @@ export const SalesListView: React.FC<SalesListViewProps> = ({
     return <SalesLoading />;
   }
 
-  // 2. Business Empty State (0 Sales)
+  // 2. Business Empty State (0 Sales): Guided activation state without zero KPI cards
   if (salesState === "empty") {
     return (
       <div className="space-y-6">
         <SalesHeader />
-        <SalesSummary
-          summary={{
-            totalSalesCount: 0,
-            totalSalesAmount: 0,
-            totalCollectedAmount: 0,
-            totalToCollectAmount: 0,
-          }}
-        />
         <SalesEmptyState />
       </div>
     );
   }
 
-  // 3. Error State
+  // 3. Error State with real accessible retry action
   if (salesState === "error") {
     return (
       <div className="space-y-6">
         <SalesHeader />
-        <SalesListError />
+        <SalesListError retryHref="/ventes" />
       </div>
     );
   }

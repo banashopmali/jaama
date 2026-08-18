@@ -107,9 +107,9 @@ export const mockPopulatedSales: SaleListItem[] = [
     itemCount: 1,
     totalAmount: 15000,
     paidAmount: 0,
-    remainingAmount: 15000,
+    remainingAmount: 0, // Cancelled sale MUST NOT expose remaining collectible balance
     paymentMethod: "cash",
-    paymentStatus: "À encaisser",
+    paymentStatus: "Remboursée",
     saleStatus: "Annulée",
     seller: { id: "user-1", name: "Hamidou" },
   },
@@ -171,6 +171,10 @@ export const mockPopulatedSales: SaleListItem[] = [
   },
 ];
 
+/**
+ * Period summary snapshot representing global aggregated business metrics
+ * across the selected accounting period (e.g. 24 total sales).
+ */
 export const mockSummaryData: SalesSummaryData = {
   totalSalesCount: 24,
   totalSalesAmount: 1425000,
