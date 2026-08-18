@@ -13,7 +13,7 @@ Le module Liste des Ventes (route `/ventes`) est l'**interface opérationnelle d
 3. **Combien reste-t-il à percevoir ?** -> Synthèse : *À encaisser* (`375 000 FCFA`)
 4. **Quelles sont les ventes impayées ou partielles ?** -> Tableau & cartes avec badges et montants restants explicites.
 5. **Où est la transaction cherchée ?** -> Champ de recherche instantané par référence ou nom de client.
-6. **Comment enregistrer une nouvelle vente ?** -> Bouton CTA principal `+ Nouvelle vente` (`/ventes/nouvelle`).
+6. **Comment démarrer une nouvelle vente ?** -> Bouton CTA principal `+ Nouvelle vente` (`/ventes/nouvelle`).
 
 ---
 
@@ -23,7 +23,8 @@ Le statut de vente (*Terminée*, *Annulée*, *Remboursée*) est **strictement in
 
 - Une vente `Terminée` peut posséder un statut de paiement `Partiellement payée` (ex. Total : 75 000 FCFA, Perçu : 50 000 FCFA, Reste : 25 000 FCFA).
 - Une vente `Terminée` peut posséder un statut de paiement `À encaisser` (ex. Vente à crédit de 35 000 FCFA, Perçu : 0 FCFA).
-- Le modèle de données ne fusionne **jamais** ces deux notions.
+- **Ventes Annulées (`Annulée`)** : Une vente annulée ne présente **aucun montant restant à encaisser** (`remainingAmount === 0`). Elle ne constitue pas une créance active.
+- Le modèle de données ne fusionne **jamais** les statuts de vente et de paiement.
 
 ---
 
@@ -39,7 +40,7 @@ Le tableau desktop (écrans >=768px) comporte les **10 colonnes obligatoires** s
 7. **Mode de paiement** (ex. `Wave`)
 8. **Statut paiement** (Badge *Partiellement payée*)
 9. **Vendeur** (ex. `Hamidou`)
-10. **Actions** (Bouton de consultation)
+10. **Actions** (Bouton d'action désactivé avec message d'indisponibilité temporaire *"Détail de la vente VTE-0023 bientôt disponible"*)
 
 ---
 
@@ -57,9 +58,9 @@ Sur mobile, le tableau desktop laisse place à une liste de cartes optimisées p
 ## 5. Architecture Serveur / Isolâts Clients
 
 - **Page serveur (`apps/web/src/app/(app)/ventes/page.tsx`)** : Rendu RSC résolvant `searchParams.salesState`.
-- **`SalesListView.tsx`** : Composant serveur orchestrant les sections et les 4 cartes de synthèse.
+- **`SalesListView.tsx`** : Composant serveur orchestrant l'en-tête, les cartes de synthèse globales et les différents états d'affichage.
 - **`SalesListInteractiveSection.tsx`** : **Isolât client unique** (`"use client"`) gérant l'état local de recherche, les sélecteurs de filtre et le filtrage réactif du jeu de données.
-- Composants de présentation (`SalesHeader`, `SalesSummary`, `SalesTable`, `SalesMobileList`, `PaymentStatusBadge`, `SalesEmptyState`, `SalesLoading`, `SalesListError`) : Tous maintenus en **React Server Components**.
+- **Composants de présentation réutilisables** (`SalesHeader`, `SalesSummary`, `SalesTable`, `SalesMobileList`, `PaymentStatusBadge`, `SalesEmptyState`, `SalesLoading`, `SalesListError`) : Conçus comme des **composants de présentation compatibles serveur**. Lorsqu'ils sont rendus au sein d'un isolât client (`SalesListInteractiveSection`), ils s'exécutent comme descendants rendus côté client sans imposer la directive `"use client"` dans leurs propres fichiers sources.
 
 ---
 
@@ -68,7 +69,7 @@ Sur mobile, le tableau desktop laisse place à une liste de cartes optimisées p
 | État | Déclenchement QA | Rendu Visuel |
 | :--- | :--- | :--- |
 | **POPULATED** | Par défaut | Synthèse des 4 métriques, filtres actifs, tableau desktop 10 colonnes et cartes mobiles. |
-| **EMPTY** | `?salesState=empty` | Carte d'accueil "Aucune vente pour le moment" avec CTA "Créer ma première vente". Pas de mer de cartes à zéro. |
+| **EMPTY** | `?salesState=empty` | Carte d'accueil "Aucune vente pour le moment" avec CTA "Créer ma première vente". Pas de cartes KPI pleines de zéros. |
 | **NO-RESULTS** | Filtres sans correspondance | Message "Aucune vente ne correspond à vos filtres" avec bouton "Réinitialiser les filtres". |
 | **LOADING** | `?salesState=loading` | Layout d'éléments `Skeleton` reproduisant exactement la géométrie du tableau des ventes. |
-| **ERROR** | `?salesState=error` | Alerte d'erreur locale "Impossible de charger les ventes" avec bouton "Réessayer" sans casser l'AppShell. |
+| **ERROR** | `?salesState=error` | Alerte d'erreur locale "Impossible de charger les ventes" avec bouton accessible `Réessayer` (`/ventes`) sans casser l'AppShell. |
