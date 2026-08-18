@@ -1,6 +1,6 @@
 import React from "react";
 import Link from "next/link";
-import { CheckCircle, PlusCircle, ArrowLeft, Printer, ShoppingCart } from "lucide-react";
+import { CheckCircle, PlusCircle, ArrowLeft, Printer } from "lucide-react";
 import { Button, Card, Badge } from "@jaama/ui";
 import { PosConfirmedSaleSummary } from "../pos.types";
 import { formatMoney, getPaymentMethodLabel } from "../../sales/sales.utils";
@@ -21,8 +21,8 @@ export const SaleSuccess: React.FC<SaleSuccessProps> = ({ summary, onNewSale }) 
 
       {/* Main Title & Reference */}
       <div className="space-y-1">
-        <Badge variant="success" size="sm" className="mb-2">
-          TRANSACTION ENREGISTRÉE (SIMULATION FRONTEND)
+        <Badge variant="brand" size="sm" className="mb-2 uppercase tracking-wide">
+          SIMULATION FRONTEND — AUCUNE PERSISTANCE SERVEUR
         </Badge>
         <h2 className="text-2xl font-extrabold text-content-primary tracking-tight font-sans">
           Vente enregistrée

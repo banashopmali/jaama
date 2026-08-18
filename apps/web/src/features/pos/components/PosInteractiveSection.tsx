@@ -1,7 +1,7 @@
 "use client";
 
 import React, { useReducer } from "react";
-import { ArrowRight, ShoppingBag } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@jaama/ui";
 import { PaymentMethod } from "../../sales/sales.types";
 import {
@@ -15,11 +15,12 @@ import {
 } from "../pos.types";
 import { mockPosCustomers, mockPosProducts } from "../pos.mock";
 import {
-  calculatePaidAmount,
+  calculateAppliedPaidAmount,
   calculateRemaining,
   calculateSubtotal,
   calculateTotal,
   derivePaymentStatus,
+  validatePosCheckout,
 } from "../pos.utils";
 import { formatMoney } from "../../sales/sales.utils";
 import { PosHeader } from "./PosHeader";
@@ -90,7 +91,7 @@ function posReducer(state: PosState, action: PosAction): PosState {
       if (existingIndex >= 0) {
         const existingLine = state.cart[existingIndex];
         if (existingLine.quantity >= product.stock.available) {
-          return state; // Stock limit reached
+          return state;
         }
         updatedCart = [...state.cart];
         updatedCart[existingIndex] = {
@@ -229,21 +230,23 @@ function posReducer(state: PosState, action: PosAction): PosState {
     }
 
     case "SET_PAID_AMOUNT":
-      return { ...state, paidAmountInput: Math.max(0, action.payload) };
+      return { ...state, paidAmountInput: Math.max(0, action.payload), validationError: null };
 
     case "SET_CASH_RECEIVED":
-      return { ...state, cashReceivedInput: Math.max(0, action.payload) };
+      return { ...state, cashReceivedInput: Math.max(0, action.payload), validationError: null };
 
     case "ADD_ALLOCATION":
       return {
         ...state,
         paymentAllocations: [...state.paymentAllocations, action.payload],
+        validationError: null,
       };
 
     case "REMOVE_ALLOCATION":
       return {
         ...state,
         paymentAllocations: state.paymentAllocations.filter((a) => a.id !== action.payload),
+        validationError: null,
       };
 
     case "UPDATE_ALLOCATION_AMOUNT": {
@@ -253,6 +256,7 @@ function posReducer(state: PosState, action: PosAction): PosState {
         paymentAllocations: state.paymentAllocations.map((a) =>
           a.id === id ? { ...a, amount: Math.max(0, amount) } : a
         ),
+        validationError: null,
       };
     }
 
@@ -260,45 +264,43 @@ function posReducer(state: PosState, action: PosAction): PosState {
       return { ...state, step: action.payload, validationError: null };
 
     case "CONFIRM_MOCK_SALE": {
-      // Validations
-      if (state.cart.length === 0) {
-        return { ...state, validationError: "Votre panier est vide." };
-      }
-      if (!state.paymentMethod) {
-        return { ...state, validationError: "Veuillez sélectionner un mode de règlement." };
-      }
-
       const subtotal = calculateSubtotal(state.cart);
       const totalAmount = calculateTotal(subtotal, state.discountAmount);
-      if (totalAmount <= 0) {
-        return { ...state, validationError: "Le montant total de la vente doit être supérieur à 0 FCFA." };
-      }
 
-      const paidAmount = calculatePaidAmount(
+      // Perform canonical validation
+      const errorMsg = validatePosCheckout(
+        state.cart,
         state.paymentMethod,
         state.paidAmountInput,
-        state.paymentAllocations
+        state.cashReceivedInput,
+        state.paymentAllocations,
+        totalAmount
       );
+
+      if (errorMsg) {
+        return { ...state, validationError: errorMsg };
+      }
+
+      // Single source of truth applied paid amount
+      const paidAmount = calculateAppliedPaidAmount(
+        state.paymentMethod,
+        state.paidAmountInput,
+        state.cashReceivedInput,
+        state.paymentAllocations,
+        totalAmount
+      );
+
       const remainingAmount = calculateRemaining(totalAmount, paidAmount);
       const paymentStatus = derivePaymentStatus(totalAmount, paidAmount);
-
       const itemCount = state.cart.reduce((sum, line) => sum + line.quantity, 0);
-      const now = new Date();
-      const formattedDate = `${now.getDate().toString().padStart(2, "0")}/${(
-        now.getMonth() + 1
-      )
-        .toString()
-        .padStart(2, "0")}/${now.getFullYear()} ${now
-        .getHours()
-        .toString()
-        .padStart(2, "0")}:${now.getMinutes().toString().padStart(2, "0")}`;
 
       const cashReceived = state.paymentMethod === "cash" ? state.cashReceivedInput : paidAmount;
       const changeDue = state.paymentMethod === "cash" && cashReceived > totalAmount ? cashReceived - totalAmount : 0;
 
+      // DETERMINISTIC CANONICAL MOCK REFERENCE
       const confirmedSale: PosConfirmedSaleSummary = {
-        reference: `VTE-00${Math.floor(25 + Math.random() * 90)}`,
-        occurredAt: formattedDate,
+        reference: "VTE-0025",
+        occurredAt: "18/08/2026 17:30",
         customer: state.customer,
         itemCount,
         subtotal,
@@ -308,7 +310,7 @@ function posReducer(state: PosState, action: PosAction): PosState {
         remainingAmount,
         cashReceived: state.paymentMethod === "cash" ? cashReceived : undefined,
         changeDue: state.paymentMethod === "cash" ? changeDue : undefined,
-        paymentMethod: state.paymentMethod,
+        paymentMethod: state.paymentMethod!,
         paymentStatus,
         saleStatus: "Terminée",
       };
@@ -338,7 +340,7 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
   const totalAmount = calculateTotal(subtotal, state.discountAmount);
   const itemCount = state.cart.reduce((sum, line) => sum + line.quantity, 0);
 
-  // If sale was confirmed, show Success View
+  // Success Step View (Full Screen)
   if (state.step === "success" && state.confirmedSale) {
     return (
       <div className="space-y-6">
@@ -359,13 +361,17 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
         onResetCart={() => dispatch({ type: "CLEAR_CART" })}
       />
 
-      {/* Main Two-Panel Layout (Desktop) or Step Flow (Mobile) */}
+      {/* Main Responsive Grid Layout */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-        {/* Left Column: Product Catalog (Visible on Desktop always, or Mobile step 'catalog') */}
+        {/*
+          Product Catalog Column:
+          - Desktop (>=1024px, lg:): Always visible (lg:block lg:col-span-7 xl:col-span-8).
+          - Mobile (<1024px): Visible ONLY when state.step === "catalog". Hidden when step is "cart" or "checkout".
+        */}
         <div
           className={
-            state.step === "catalog" || state.step === "cart" || state.step === "checkout"
-              ? "lg:col-span-7 xl:col-span-8 block"
+            state.step === "catalog"
+              ? "block lg:col-span-7 xl:col-span-8"
               : "hidden lg:block lg:col-span-7 xl:col-span-8"
           }
         >
@@ -384,9 +390,13 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
           />
         </div>
 
-        {/* Right Column: Cart Panel or Checkout View */}
+        {/*
+          Right Panel / Mobile Step Views:
+          - Desktop (>=1024px, lg:): Always visible alongside catalog (lg:block lg:col-span-5 xl:col-span-4).
+          - Mobile (<1024px): Controlled explicitly by step ("cart" or "checkout").
+        */}
         <div className="lg:col-span-5 xl:col-span-4">
-          {/* Desktop View: renders CartPanel or CheckoutView directly */}
+          {/* Desktop Panel View (sticky top) */}
           <div className="hidden lg:block sticky top-20">
             {state.step === "checkout" ? (
               <CheckoutView
@@ -425,7 +435,7 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
             )}
           </div>
 
-          {/* Mobile View: Step-driven panels */}
+          {/* Mobile View Steps (<1024px) */}
           <div className="lg:hidden">
             {state.step === "cart" && (
               <div className="space-y-3">

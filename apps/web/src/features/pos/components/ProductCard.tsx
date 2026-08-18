@@ -25,25 +25,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       variant="default"
       className={cn(
         "p-4 flex flex-col justify-between transition-all duration-150 relative select-none",
-        isDisabled
-          ? "opacity-60 bg-surface-subtle border-border-subtle cursor-not-allowed"
-          : "hover:border-border-brand-subtle hover:shadow-sm cursor-pointer"
+        isDisabled ? "opacity-60 bg-surface-subtle border-border-subtle" : "hover:border-border-brand-subtle hover:shadow-sm"
       )}
-      onClick={() => {
-        if (!isDisabled) {
-          onAddToCart(product);
-        }
-      }}
-      tabIndex={isDisabled ? -1 : 0}
-      role="button"
-      aria-disabled={isDisabled}
-      aria-label={`Ajouter ${product.name} au panier. Prix ${formatMoney(product.unitPrice)}`}
-      onKeyDown={(e) => {
-        if ((e.key === "Enter" || e.key === " ") && !isDisabled) {
-          e.preventDefault();
-          onAddToCart(product);
-        }
-      }}
     >
       {/* Top Meta: SKU & Stock Badge */}
       <div className="flex items-center justify-between gap-1 mb-2">
@@ -78,7 +61,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         </span>
       </div>
 
-      {/* Footer Price & Add CTA */}
+      {/* Footer Price & Add CTA Button (Single Interactive Control) */}
       <div className="flex items-center justify-between pt-3 border-t border-border-subtle mt-2">
         <div className="text-base font-extrabold text-content-primary tracking-tight">
           {formatMoney(product.unitPrice)}
@@ -87,8 +70,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <button
           type="button"
           disabled={isDisabled}
-          onClick={(e) => {
-            e.stopPropagation();
+          onClick={() => {
             if (!isDisabled) {
               onAddToCart(product);
             }
@@ -97,7 +79,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             "w-8 h-8 rounded-lg flex items-center justify-center transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary",
             isDisabled
               ? "bg-surface-disabled text-content-disabled cursor-not-allowed"
-              : "bg-surface-brand-subtle text-content-brand hover:bg-brand-primary hover:text-content-inverse"
+              : "bg-surface-brand-subtle text-content-brand hover:bg-brand-primary hover:text-content-inverse cursor-pointer"
           )}
           aria-label={`Ajouter 1 ${product.name}`}
         >

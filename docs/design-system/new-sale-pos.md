@@ -13,7 +13,7 @@ Le module Point de Vente (route `/ventes/nouvelle`) est l'**interface de créati
 3. **Associer un Client** (`Client comptoir` par défaut ou client enregistré).
 4. **Sélectionner le Mode de Règlement** (Espèces, Wave, Orange Money, Virement, Carte, Crédit, Mixte).
 5. **Définir le Montant Perçu** et calculer la monnaie à rendre ou le solde restant.
-6. **Récapituler & Confirmer** la vente sous forme de simulation frontend déterministe.
+6. **Récapituler & Confirmer** la vente sous forme de simulation frontend déterministe (`VTE-0025`).
 
 ---
 
@@ -32,30 +32,30 @@ La confirmation de vente ne présume **jamais** un paiement intégral automatiqu
 ## 3. Dispositions Ergonomiques & Responsive
 
 - **Desktop (>=1024px)** : Layout 2 panneaux côte à côte :
-  - Gauche (60–65%) : Catalogue produits, barre de recherche, filtres de catégories, cartes produits.
-  - Droite (35–40%) : Panier sticky, sélection client, calculs financiers, puis bascule vers la caisse/règlement.
-- **Mobile (<1024px — 390px)** : Machine d'état par étapes (`catalog` $\rightarrow$ `cart` $\rightarrow$ `checkout` $\rightarrow$ `success`) avec barre inférieure sticky d'accès rapide au panier (*"Voir le panier ({count})"*).
+  - Gauche (60–65%) : Catalogue produits toujours visible.
+  - Droite (35–40%) : Panier sticky, puis bascule vers la caisse/règlement.
+- **Mobile (<1024px — 390px)** : Machine d'état par étapes totalement étanche (`catalog` $\rightarrow$ `cart` $\rightarrow$ `checkout` $\rightarrow$ `success`) sans superposition ni fuite visuelle de catalogue lors du panier ou du règlement.
 
 ---
 
-## 4. Modèle de Données & Calculs Financiers
+## 4. Modèle de Données, Intégrité du Paiement & Calculs Financiers
 
-- **Montants Entiers XOF** : Tous les prix et montants sont stockés sous forme d'entiers numériques (FCFA) sans représentation flottante ni chaînes pré-formatées dans les modèles.
-- **Limitation de Stock UX** : Empêche la sélection de quantités supérieures au stock disponible mocké (`available`). En cas de rupture (`out`), la carte produit est désactivée avec l'indication *Rupture de stock*.
-- **Calculs Purs** :
-  - `subtotal = sum(unitPrice * quantity)`
-  - `total = max(0, subtotal - discountAmount)`
-  - `remaining = max(0, total - paidAmount)`
-  - `derivePaymentStatus(total, paid)` $\rightarrow$ `"Payée" | "Partiellement payée" | "À encaisser"`.
+- **Montants Entiers XOF** : Tous les prix et montants sont stockés sous forme d'entiers numériques (FCFA) sans représentation flottante.
+- **Source Unique de Vérité (`calculateAppliedPaidAmount`)** :
+  - **Espèces (`cash`)** : Les espèces perçues (`cashReceivedInput`) peuvent dépasser le total pour calculer la monnaie à rendre (`changeDue`), mais le montant perçu appliqué à la vente est plafonné au total (`totalAmount`).
+  - **Non-Espèces (Wave, OM, Carte, Virement)** : Le montant encaissé ne peut pas dépasser le total de la vente (rejet avec alerte d'erreur inline).
+  - **Crédit (`credit`)** : Représente le solde non perçu initial (montant encaissé perçu = 0 FCFA). Le crédit n'est PAS un mode d'allocation d'encaissement mixte.
+  - **Règlement Mixte (`mixed`)** : Restreint aux modes d'encaissement réels (`cash`, `wave`, `orange_money`, `bank_transfer`, `card`). Le total distribué ne peut dépasser le total de la vente et chaque allocation doit être > 0 FCFA.
+- **Référence Déterministe Mock** : `VTE-0025` pour toute confirmation frontend S0-06 avec mention explicite *SIMULATION FRONTEND — AUCUNE PERSISTANCE SERVEUR*.
 
 ---
 
-## 5. Architecture Serveur / Isolât Client
+## 5. Architecture Serveur / Isolât Client & Accessibilité
 
 - **Page serveur (`apps/web/src/app/(app)/ventes/nouvelle/page.tsx`)** : Route RSC résolvant le paramètre d'assurance qualité `searchParams.posState`.
 - **`PosView.tsx`** : Composant serveur d'orchestration.
 - **`PosInteractiveSection.tsx`** : **Isolât client unique** (`"use client"`) basé sur un réducteur d'état (`useReducer`) centralisant la navigation du catalogue, la gestion du panier et l'étape de règlement.
-- **Composants de présentation** (`PosHeader`, `ProductCatalog`, `ProductCard`, `CartPanel`, `CartLine`, `CustomerSelector`, `CheckoutView`, `PaymentMethodSelector`, `PaymentAmountInput`, `MixedPaymentEditor`, `SaleReview`, `SaleSuccess`, `PosLoading`, `PosErrorState`, `PosNoCatalogState`) : Tous conçus comme des **composants de présentation compatibles serveur**.
+- **Accessibilité ProductCard** : Les cartes produits ne contiennent aucun contrôle interactif imbriqué. La carte est de présentation et le bouton d'ajout constitue le seul contrôle réactif accessible au clavier.
 
 ---
 
