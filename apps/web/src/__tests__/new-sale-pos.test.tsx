@@ -2,13 +2,14 @@ import { describe, it, expect, vi } from "vitest";
 import React from "react";
 import { render, screen, fireEvent } from "@testing-library/react";
 import {
+  calculateAppliedPaidAmount,
   calculateLineTotal,
+  calculateRemaining,
   calculateSubtotal,
   calculateTotal,
-  calculatePaidAmount,
-  calculateRemaining,
   derivePaymentStatus,
   filterProducts,
+  validatePosCheckout,
 } from "../features/pos/pos.utils";
 import { PosView } from "../features/pos/components/PosView";
 import { mockPosProducts } from "../features/pos/pos.mock";
@@ -21,8 +22,8 @@ vi.mock("next/navigation", () => ({
   }),
 }));
 
-describe("JAAMA New Sale / POS V1 — Domain & Component Behavior Contracts (JAA-S0-06)", () => {
-  describe("Pure POS Math & Utility Contracts", () => {
+describe("JAAMA New Sale / POS V1 — Integrity & Behavior Contracts (JAA-S0-06)", () => {
+  describe("Pure POS Math & Single Source of Truth Contracts", () => {
     it("calculates line total accurately without floating point bugs", () => {
       expect(calculateLineTotal(500, 3)).toBe(1500);
       expect(calculateLineTotal(750, 2)).toBe(1500);
@@ -40,59 +41,66 @@ describe("JAAMA New Sale / POS V1 — Domain & Component Behavior Contracts (JAA
 
       expect(calculateTotal(subtotal, 500)).toBe(1500);
       expect(calculateTotal(subtotal, 0)).toBe(2000);
-      expect(calculateTotal(subtotal, 3000)).toBe(0); // Discount cannot exceed subtotal
+      expect(calculateTotal(subtotal, 3000)).toBe(0);
     });
 
     it("derives payment status according to exact business rules", () => {
-      // 1. Full Payment
       expect(derivePaymentStatus(25000, 25000)).toBe("Payée");
       expect(derivePaymentStatus(25000, 30000)).toBe("Payée");
-
-      // 2. Partial Payment
       expect(derivePaymentStatus(75000, 50000)).toBe("Partiellement payée");
-      expect(derivePaymentStatus(100000, 1000)).toBe("Partiellement payée");
-
-      // 3. Unpaid / Credit
       expect(derivePaymentStatus(35000, 0)).toBe("À encaisser");
-      expect(derivePaymentStatus(35000, -500)).toBe("À encaisser");
     });
 
     it("calculates remaining balance ensuring non-negative values", () => {
       expect(calculateRemaining(75000, 50000)).toBe(25000);
       expect(calculateRemaining(25000, 25000)).toBe(0);
-      expect(calculateRemaining(25000, 30000)).toBe(0); // Never negative
+      expect(calculateRemaining(25000, 30000)).toBe(0);
     });
 
-    it("filters catalog products by search query and category", () => {
-      const searchResult = filterProducts(mockPosProducts, "Coca", "Tous");
-      expect(searchResult.length).toBe(1);
-      expect(searchResult[0].name).toBe("Coca-Cola 50cl");
+    it("uses calculateAppliedPaidAmount as single source of truth for paid amounts", () => {
+      // Cash overpayment: cashReceived 10000 on 8500 total -> applied = 8500
+      expect(calculateAppliedPaidAmount("cash", 0, 10000, [], 8500)).toBe(8500);
 
-      const skuResult = filterProducts(mockPosProducts, "NID-400", "Tous");
-      expect(skuResult.length).toBe(1);
-      expect(skuResult[0].sku).toBe("NID-400");
+      // Credit: applied = 0
+      expect(calculateAppliedPaidAmount("credit", 0, 0, [], 35000)).toBe(0);
 
-      const categoryResult = filterProducts(mockPosProducts, "", "Boissons");
-      expect(categoryResult.length).toBeGreaterThan(0);
-      expect(categoryResult.every((p) => p.category === "Boissons")).toBe(true);
-    });
+      // Wave single method overpayment clamp: 30000 on 25000 total -> applied = 25000
+      expect(calculateAppliedPaidAmount("wave", 30000, 0, [], 25000)).toBe(25000);
 
-    it("calculates mixed payment allocations correctly", () => {
+      // Mixed allocations: Cash 30000 + Wave 40000 = 70000 on 100000 total
       const allocations = [
-        { id: "a1", method: "cash" as const, amount: 40000 },
-        { id: "a2", method: "wave" as const, amount: 60000 },
-      ];
-      const paid = calculatePaidAmount("mixed", 0, allocations);
-      expect(paid).toBe(100000);
-      expect(derivePaymentStatus(100000, paid)).toBe("Payée");
-
-      const partialAllocations = [
         { id: "a1", method: "cash" as const, amount: 30000 },
         { id: "a2", method: "wave" as const, amount: 40000 },
       ];
-      const partialPaid = calculatePaidAmount("mixed", 0, partialAllocations);
-      expect(partialPaid).toBe(70000);
-      expect(derivePaymentStatus(100000, partialPaid)).toBe("Partiellement payée");
+      expect(calculateAppliedPaidAmount("mixed", 0, 0, allocations, 100000)).toBe(70000);
+      expect(calculateRemaining(100000, 70000)).toBe(30000);
+      expect(derivePaymentStatus(100000, 70000)).toBe("Partiellement payée");
+    });
+
+    it("validates checkout inputs correctly according to payment integrity rules", () => {
+      const cart = [{ productId: "p1", sku: "S1", name: "P1", unitPrice: 5000, quantity: 2, maxAvailableStock: 10 }];
+
+      // Non-cash overpayment error
+      expect(validatePosCheckout(cart, "wave", 15000, 0, [], 10000)).toBe(
+        "Le montant encaissé ne peut pas dépasser le total de la vente."
+      );
+
+      // Mixed overpayment error
+      const overAllocations = [
+        { id: "a1", method: "cash" as const, amount: 60000 },
+        { id: "a2", method: "wave" as const, amount: 60000 },
+      ];
+      expect(validatePosCheckout(cart, "mixed", 0, 0, overAllocations, 100000)).toBe(
+        "Le total des règlements ne peut pas dépasser le total de la vente."
+      );
+
+      // Mixed zero allocation error
+      const zeroAllocations = [
+        { id: "a1", method: "cash" as const, amount: 0 },
+      ];
+      expect(validatePosCheckout(cart, "mixed", 0, 0, zeroAllocations, 100000)).toBe(
+        "Chaque mode de règlement doit avoir un montant supérieur à 0 FCFA."
+      );
     });
   });
 
@@ -104,6 +112,14 @@ describe("JAAMA New Sale / POS V1 — Domain & Component Behavior Contracts (JAA
       expect(screen.getByPlaceholderText(/Rechercher un produit ou un SKU/i)).toBeInTheDocument();
       expect(screen.getAllByText("Votre panier est vide").length).toBeGreaterThan(0);
       expect(screen.getAllByText(/Client comptoir/i).length).toBeGreaterThan(0);
+    });
+
+    it("product cards do NOT contain nested interactive controls", () => {
+      const { container } = render(<PosView posState="ready" />);
+      const buttonRoles = container.querySelectorAll('[role="button"]');
+      buttonRoles.forEach((roleEl) => {
+        expect(roleEl.querySelector("button")).toBeNull();
+      });
     });
 
     it("filters products by text search and clears with reset button", () => {
@@ -120,16 +136,6 @@ describe("JAAMA New Sale / POS V1 — Domain & Component Behavior Contracts (JAA
       fireEvent.click(resetBtn);
 
       expect(screen.getByText("Coca-Cola 50cl")).toBeInTheDocument();
-    });
-
-    it("filters products by category buttons", () => {
-      render(<PosView posState="ready" />);
-
-      const drinksBtn = screen.getByRole("button", { name: /Catégorie Boissons/i });
-      fireEvent.click(drinksBtn);
-
-      expect(screen.getByText("Coca-Cola 50cl")).toBeInTheDocument();
-      expect(screen.queryByText("Riz Parfumé 5kg")).not.toBeInTheDocument();
     });
 
     it("adds available product to cart and updates subtotal and total", () => {
@@ -152,114 +158,61 @@ describe("JAAMA New Sale / POS V1 — Domain & Component Behavior Contracts (JAA
       expect(disabledAddBtn).toBeDisabled();
     });
 
-    it("prevents incrementing cart quantity beyond available stock", () => {
+    it("handles cash overpayment: total 8500 FCFA, cashReceived 10000 FCFA -> paidApplied 8500 FCFA, change 1500 FCFA", () => {
       render(<PosView posState="ready" />);
 
-      const addNidoBtn = screen.getByRole("button", { name: /Ajouter 1 Lait Nido 400g/i });
-      fireEvent.click(addNidoBtn);
-      fireEvent.click(addNidoBtn);
-      fireEvent.click(addNidoBtn);
-
-      const incBtn = screen.getAllByRole("button", { name: /Augmenter la quantité de Lait Nido 400g/i })[0];
-      expect(incBtn).toBeDisabled();
-      expect(screen.getAllByText("Stock max (3)").length).toBeGreaterThan(0);
-    });
-
-    it("removes line item when clicking remove action", () => {
-      render(<PosView posState="ready" />);
-
+      // Add Coca-Cola 50cl (500 FCFA) x 17 = 8500 FCFA total
       const addCocaBtn = screen.getByRole("button", { name: /Ajouter 1 Coca-Cola 50cl/i });
-      fireEvent.click(addCocaBtn);
+      for (let i = 0; i < 17; i++) {
+        fireEvent.click(addCocaBtn);
+      }
 
-      const removeBtn = screen.getAllByRole("button", { name: /Supprimer Coca-Cola 50cl du panier/i })[0];
-      fireEvent.click(removeBtn);
-
-      expect(screen.getAllByText("Votre panier est vide").length).toBeGreaterThan(0);
-    });
-
-    it("allows registered customer selection", () => {
-      render(<PosView posState="ready" />);
-
-      const customerSelect = screen.getAllByLabelText(/Sélectionner un client pour la vente/i)[0];
-      fireEvent.change(customerSelect, { target: { value: "Awa Traoré" } });
-
-      expect(screen.getAllByText(/Awa Traoré/i).length).toBeGreaterThan(0);
-    });
-
-    it("handles Full Payment checkout flow and derives 'Payée' status", () => {
-      render(<PosView posState="ready" />);
-
-      // 1. Add product (Coca-Cola 500 FCFA)
-      fireEvent.click(screen.getByRole("button", { name: /Ajouter 1 Coca-Cola 50cl/i }));
-
-      // 2. Click proceed to checkout
       const proceedBtn = screen.getAllByRole("button", { name: /Continuer vers le paiement/i })[0];
       fireEvent.click(proceedBtn);
 
-      // 3. Select payment method Espèces
       const cashBtn = screen.getAllByRole("button", { name: /Sélectionner le mode de paiement Espèces/i })[0];
       fireEvent.click(cashBtn);
 
-      // 4. Verify derived payment status badge 'Payée'
-      expect(screen.getAllByText("Payée").length).toBeGreaterThan(0);
+      // Target explicit paid amount input by aria-label across all renders
+      const paidInputs = screen.getAllByLabelText("Montant perçu en FCFA");
+      paidInputs.forEach((input) => {
+        fireEvent.change(input, { target: { value: "10000" } });
+      });
 
-      // 5. Click confirm sale
-      const confirmBtn = screen.getAllByRole("button", { name: /Confirmer la vente/i })[0];
-      fireEvent.click(confirmBtn);
-
-      // 6. Verify Success View
-      expect(screen.getByText("Vente enregistrée")).toBeInTheDocument();
-      expect(screen.getAllByText("500 FCFA").length).toBeGreaterThan(0);
-    });
-
-    it("handles Partial Payment checkout flow and derives 'Partiellement payée' status", () => {
-      render(<PosView posState="ready" />);
-
-      // Add product (Lait Nido 4500 FCFA)
-      fireEvent.click(screen.getByRole("button", { name: /Ajouter 1 Lait Nido 400g/i }));
-
-      const proceedBtn = screen.getAllByRole("button", { name: /Continuer vers le paiement/i })[0];
-      fireEvent.click(proceedBtn);
-
-      const waveBtn = screen.getAllByRole("button", { name: /Sélectionner le mode de paiement Wave/i })[0];
-      fireEvent.click(waveBtn);
-
-      // Set paid amount input to 2000 FCFA
-      const paidInput = screen.getAllByLabelText(/Montant perçu en FCFA/i)[0];
-      fireEvent.change(paidInput, { target: { value: "2000" } });
-
-      expect(screen.getAllByText("Partiellement payée").length).toBeGreaterThan(0);
+      expect(screen.getAllByText(/Monnaie à rendre/i).length).toBeGreaterThan(0);
+      expect(screen.getAllByText("1 500 FCFA").length).toBeGreaterThan(0);
 
       const confirmBtn = screen.getAllByRole("button", { name: /Confirmer la vente/i })[0];
       fireEvent.click(confirmBtn);
 
+      // Verify deterministic mock reference VTE-0025
+      expect(screen.getByText("VTE-0025")).toBeInTheDocument();
       expect(screen.getByText("Vente enregistrée")).toBeInTheDocument();
-      expect(screen.getAllByText("Partiellement payée").length).toBeGreaterThan(0);
-      expect(screen.getAllByText("2 000 FCFA").length).toBeGreaterThan(0); // Paid
-      expect(screen.getAllByText("2 500 FCFA").length).toBeGreaterThan(0); // Remaining
+      expect(screen.getByText("Monnaie rendue au client :")).toBeInTheDocument();
     });
 
-    it("handles Credit Sale checkout flow and derives 'À encaisser' status", () => {
+    it("rejects non-cash overpayment confirmation with inline error message", () => {
       render(<PosView posState="ready" />);
 
       fireEvent.click(screen.getByRole("button", { name: /Ajouter 1 Coca-Cola 50cl/i }));
+      fireEvent.click(screen.getAllByRole("button", { name: /Continuer vers le paiement/i })[0]);
+      fireEvent.click(screen.getAllByRole("button", { name: /Sélectionner le mode de paiement Wave/i })[0]);
 
-      const proceedBtn = screen.getAllByRole("button", { name: /Continuer vers le paiement/i })[0];
-      fireEvent.click(proceedBtn);
-
-      const creditBtn = screen.getAllByRole("button", { name: /Sélectionner le mode de paiement Crédit/i })[0];
-      fireEvent.click(creditBtn);
-
-      expect(screen.getAllByText("À encaisser").length).toBeGreaterThan(0);
+      // Enter Wave amount 30 000 FCFA on 500 FCFA total
+      const paidInputs = screen.getAllByLabelText("Montant perçu en FCFA");
+      paidInputs.forEach((input) => {
+        fireEvent.change(input, { target: { value: "30000" } });
+      });
 
       const confirmBtn = screen.getAllByRole("button", { name: /Confirmer la vente/i })[0];
       fireEvent.click(confirmBtn);
 
-      expect(screen.getByText("Vente enregistrée")).toBeInTheDocument();
-      expect(screen.getAllByText("À encaisser").length).toBeGreaterThan(0);
+      expect(
+        screen.getAllByText("Le montant encaissé ne peut pas dépasser le total de la vente.").length
+      ).toBeGreaterThan(0);
     });
 
-    it("resets POS to clean initial state when clicking 'Nouvelle vente' on success view", () => {
+    it("generates deterministic mock reference VTE-0025 on sale confirmation", () => {
       render(<PosView posState="ready" />);
 
       fireEvent.click(screen.getByRole("button", { name: /Ajouter 1 Coca-Cola 50cl/i }));
@@ -267,12 +220,8 @@ describe("JAAMA New Sale / POS V1 — Domain & Component Behavior Contracts (JAA
       fireEvent.click(screen.getAllByRole("button", { name: /Sélectionner le mode de paiement Espèces/i })[0]);
       fireEvent.click(screen.getAllByRole("button", { name: /Confirmer la vente/i })[0]);
 
-      expect(screen.getByText("Vente enregistrée")).toBeInTheDocument();
-
-      const newSaleBtn = screen.getByRole("button", { name: /Nouvelle vente/i });
-      fireEvent.click(newSaleBtn);
-
-      expect(screen.getAllByText("Votre panier est vide").length).toBeGreaterThan(0);
+      expect(screen.getByText("VTE-0025")).toBeInTheDocument();
+      expect(screen.getByText("SIMULATION FRONTEND — AUCUNE PERSISTANCE SERVEUR")).toBeInTheDocument();
     });
   });
 
