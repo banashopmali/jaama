@@ -36,7 +36,7 @@ export interface PosCustomer {
 
 export interface PosPaymentAllocation {
   id: string;
-  method: Exclude<PaymentMethod, "mixed">;
+  method: Exclude<PaymentMethod, "mixed" | "credit">;
   amount: number; // Integer FCFA
 }
 

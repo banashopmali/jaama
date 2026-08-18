@@ -4,7 +4,7 @@ import { Button, Card, Alert } from "@jaama/ui";
 import { PaymentMethod } from "../../sales/sales.types";
 import { PosCartLine, PosCustomer, PosPaymentAllocation } from "../pos.types";
 import {
-  calculatePaidAmount,
+  calculateAppliedPaidAmount,
   calculateRemaining,
   calculateSubtotal,
   calculateTotal,
@@ -58,7 +58,15 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
 }) => {
   const subtotal = calculateSubtotal(cart);
   const totalAmount = calculateTotal(subtotal, discountAmount);
-  const paidAmount = calculatePaidAmount(paymentMethod, paidAmountInput, paymentAllocations);
+
+  // SINGLE SOURCE OF TRUTH APPLIED PAID AMOUNT
+  const paidAmount = calculateAppliedPaidAmount(
+    paymentMethod,
+    paidAmountInput,
+    cashReceivedInput,
+    paymentAllocations,
+    totalAmount
+  );
   const remainingAmount = calculateRemaining(totalAmount, paidAmount);
   const paymentStatus = derivePaymentStatus(totalAmount, paidAmount);
 

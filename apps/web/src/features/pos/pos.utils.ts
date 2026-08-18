@@ -26,24 +26,36 @@ export function calculateTotal(subtotal: number, discountAmount: number): number
 }
 
 /**
- * Calculates actual paid amount based on payment method and allocations.
+ * SINGLE SOURCE OF TRUTH: Calculates the actual applied paid amount towards the sale.
+ *
+ * - Cash: Math.min(cashReceivedInput, totalAmount)
+ * - Credit: 0 FCFA (unpaid balance)
+ * - Mixed: Math.min(sum(allocations), totalAmount)
+ * - Single Non-Cash (Wave, OM, Card, Transfer): Math.min(paidAmountInput, totalAmount)
  */
-export function calculatePaidAmount(
+export function calculateAppliedPaidAmount(
   paymentMethod: PaymentMethod | null,
   paidAmountInput: number,
-  allocations: PosPaymentAllocation[]
+  cashReceivedInput: number,
+  allocations: PosPaymentAllocation[],
+  totalAmount: number
 ): number {
-  if (!paymentMethod) return 0;
-
-  if (paymentMethod === "mixed") {
-    return allocations.reduce((sum, alloc) => sum + Math.max(0, alloc.amount), 0);
-  }
+  if (!paymentMethod || totalAmount <= 0) return 0;
 
   if (paymentMethod === "credit") {
     return 0; // Credit sale has 0 initial collected payment
   }
 
-  return Math.max(0, paidAmountInput);
+  if (paymentMethod === "cash") {
+    return Math.min(Math.max(0, cashReceivedInput), totalAmount);
+  }
+
+  if (paymentMethod === "mixed") {
+    const totalAllocated = allocations.reduce((sum, a) => sum + Math.max(0, a.amount), 0);
+    return Math.min(totalAllocated, totalAmount);
+  }
+
+  return Math.min(Math.max(0, paidAmountInput), totalAmount);
 }
 
 /**
@@ -55,7 +67,7 @@ export function calculateRemaining(totalAmount: number, paidAmount: number): num
 }
 
 /**
- * Derives exact PaymentStatus from total and paid amounts.
+ * Derives exact PaymentStatus from total and applied paid amounts.
  *
  * RULES:
  * - paid <= 0          -> "À encaisser"
@@ -67,6 +79,52 @@ export function derivePaymentStatus(totalAmount: number, paidAmount: number): Pa
   if (paidAmount <= 0) return "À encaisser";
   if (paidAmount < totalAmount) return "Partiellement payée";
   return "Payée";
+}
+
+/**
+ * Validates checkout parameters before sale confirmation.
+ */
+export function validatePosCheckout(
+  cart: PosCartLine[],
+  paymentMethod: PaymentMethod | null,
+  paidAmountInput: number,
+  cashReceivedInput: number,
+  allocations: PosPaymentAllocation[],
+  totalAmount: number
+): string | null {
+  if (cart.length === 0) {
+    return "Votre panier est vide.";
+  }
+  if (!paymentMethod) {
+    return "Veuillez sélectionner un mode de règlement.";
+  }
+  if (totalAmount <= 0) {
+    return "Le montant total de la vente doit être supérieur à 0 FCFA.";
+  }
+
+  if (paymentMethod !== "cash" && paymentMethod !== "mixed" && paymentMethod !== "credit") {
+    if (paidAmountInput > totalAmount) {
+      return "Le montant encaissé ne peut pas dépasser le total de la vente.";
+    }
+  }
+
+  if (paymentMethod === "mixed") {
+    if (allocations.length === 0) {
+      return "Veuillez ajouter au moins un mode de règlement.";
+    }
+
+    const hasInvalidAllocation = allocations.some((a) => a.amount <= 0);
+    if (hasInvalidAllocation) {
+      return "Chaque mode de règlement doit avoir un montant supérieur à 0 FCFA.";
+    }
+
+    const totalAllocated = allocations.reduce((sum, a) => sum + a.amount, 0);
+    if (totalAllocated > totalAmount) {
+      return "Le total des règlements ne peut pas dépasser le total de la vente.";
+    }
+  }
+
+  return null;
 }
 
 /**
