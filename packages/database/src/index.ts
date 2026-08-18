@@ -1,5 +1,6 @@
 // Authoritative Database & Persistence Layer Exports (@jaama/database)
 
+export { PrismaClient } from "@prisma/client";
 export * from "./repositories";
 export * from "./prisma.service";
 export * from "./seed";

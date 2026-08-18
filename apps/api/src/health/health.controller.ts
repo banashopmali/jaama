@@ -1,5 +1,4 @@
 import { Controller, Get, HttpStatus, Res } from "@nestjs/common";
-import { Response } from "express";
 import { prisma } from "@jaama/database";
 import { getLivenessSignal, getReadinessSignal } from "@jaama/config";
 
@@ -11,7 +10,7 @@ export class HealthController {
   }
 
   @Get("readiness")
-  public async getReadiness(@Res() res: Response) {
+  public async getReadiness(@Res() res: any) {
     try {
       await prisma.$queryRaw`SELECT 1`;
       const signal = getReadinessSignal(true);

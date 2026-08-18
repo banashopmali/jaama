@@ -18,7 +18,7 @@ describe("JAAMA Reference Create Sale Vertical Slice against PostgreSQL (JAA-S0-
       data: { unitPriceMinor: 5000 },
     });
 
-    const session = await sessionRepo.createSession("user-hamidou", "token-slice-123", new Date(Date.now() + 3600000));
+    await sessionRepo.createSession("user-hamidou", "token-slice-123", new Date(Date.now() + 3600000));
 
     userContext = {
       actorId: "user-hamidou",

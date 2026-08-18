@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { InMemoryDatabase, seedInMemoryDatabase } from "@jaama/database";
-import { RbacService, getRolePermissions, hasPermission } from "../rbac.service";
+import { RbacService, hasPermission } from "../rbac.service";
 import { TenantService } from "../tenant.service";
 import { createSession } from "../session";
 

@@ -44,14 +44,12 @@ export function validateCreateSaleCommand(input: unknown): { valid: true; data: 
     }
   }
 
-  if (!Array.isArray(payload.payments) || payload.payments.length === 0) {
-    return { valid: false, error: "Veuillez fournir au moins un mode de règlement." };
-  }
-
+  // Payments array is optional or empty array for credit/unpaid sales
+  const paymentsInput = Array.isArray(payload.payments) ? payload.payments : [];
   const validMethods: PaymentMethodCode[] = ["cash", "wave", "orange_money", "bank_transfer", "card"];
   const usedMethods = new Set<string>();
 
-  for (const pay of payload.payments) {
+  for (const pay of paymentsInput) {
     if (!pay || typeof pay !== "object" || !validMethods.includes(pay.method)) {
       return { valid: false, error: "Mode de règlement invalide." };
     }
@@ -78,7 +76,7 @@ export function validateCreateSaleCommand(input: unknown): { valid: true; data: 
         quantity: l.quantity,
       })),
       discountMinor,
-      payments: payload.payments.map((p: any) => ({
+      payments: paymentsInput.map((p: any) => ({
         method: p.method as PaymentMethodCode,
         amountMinor: p.amountMinor,
       })),

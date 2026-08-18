@@ -7,7 +7,6 @@ import {
   InventoryBalance,
   StockMovement,
   Sale,
-  SaleLine,
   Payment,
   AuditEvent,
   OutboxEvent,

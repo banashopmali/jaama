@@ -1,5 +1,4 @@
 import { Injectable, BadRequestException, ConflictException } from "@nestjs/common";
-import { createHash } from "crypto";
 import { prisma as defaultPrisma } from "@jaama/database";
 import {
   calculateAppliedPaidMinor,
@@ -7,15 +6,14 @@ import {
   calculateRemainingMinor,
   calculateSubtotalMinor,
   calculateTotalMinor,
-  CreateSaleCommand,
   derivePaymentStatusFromMinor,
   Payment,
-  PaymentMethodCode,
   Sale,
   SaleLine,
   UserContext,
 } from "@jaama/types";
 import { validateCreateSaleCommand } from "@jaama/validation";
+import { hashCanonicalPayload } from "../common/canonical-hash";
 
 @Injectable()
 export class SalesService {
@@ -38,15 +36,13 @@ export class SalesService {
     const operation = "sales.create";
     const idempotencyKey = command.idempotencyKey;
 
-    const requestHash = createHash("sha256")
-      .update(JSON.stringify(commandInput))
-      .digest("hex");
+    // 1. CANONICAL REQUEST HASH (Deterministic property sorting)
+    const requestHash = hashCanonicalPayload(commandInput);
 
     // Execute atomic PostgreSQL transaction
     return prismaClient.$transaction(async (tx) => {
-      // 1. DURABLE IDEMPOTENCY HANDLING
+      // 2. CONCURRENCY-SAFE IDEMPOTENCY HANDLING
       if (idempotencyKey) {
-        const existingKey = `${organizationId}:${operation}:${idempotencyKey}`;
         const existingRecord = await tx.idempotencyRecord.findUnique({
           where: {
             organizationId_operation_idempotencyKey: {
@@ -71,19 +67,34 @@ export class SalesService {
           }
         }
 
-        // Register PROCESSING record
-        await tx.idempotencyRecord.create({
-          data: {
-            organizationId,
-            operation,
-            idempotencyKey,
-            requestHash,
-            status: "PROCESSING",
-          },
-        });
+        // Try registering PROCESSING record with idempotency unique key
+        try {
+          await tx.idempotencyRecord.create({
+            data: {
+              organizationId,
+              operation,
+              idempotencyKey,
+              requestHash,
+              status: "PROCESSING",
+            },
+          });
+        } catch (e: any) {
+          // Catch concurrent duplicate key attempt safely
+          if (e.code === "P2002") {
+            throw new ConflictException("Requête idempotente en cours de traitement.");
+          }
+          throw e;
+        }
       }
 
-      // 2. RESOURCE OWNERSHIP & PRODUCT VALIDATION
+      // 3. LOCK TENANT ROW FOR CONCURRENCY-SAFE REFERENCE GENERATION
+      await tx.$executeRaw`
+        UPDATE "Organization"
+        SET "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "id" = ${organizationId}
+      `;
+
+      // 4. RESOURCE OWNERSHIP & PRODUCT VALIDATION
       const saleLines: SaleLine[] = [];
       const stockUpdates: { productId: string; quantity: number }[] = [];
 
@@ -124,7 +135,21 @@ export class SalesService {
         });
       }
 
-      // 3. ATOMIC STOCK DECREMENT IN POSTGRESQL (PREVENT NEGATIVE OVERSELL)
+      // 5. FINANCIAL CALCULATIONS & OVERPAYMENT LEDGER INTEGRITY CHECK (P0)
+      const subtotalMinor = calculateSubtotalMinor(saleLines);
+      const totalMinor = calculateTotalMinor(subtotalMinor, command.discountMinor || 0);
+
+      const rawPayments = command.payments || [];
+      const sumRawPayments = rawPayments.reduce((sum, p) => sum + Math.max(0, p.amountMinor), 0);
+
+      // P0 Invariant: Total collected Payments in ledger cannot exceed Sale totalMinor
+      if (sumRawPayments > totalMinor) {
+        throw new BadRequestException(
+          "Le montant total des règlements ne peut dépasser le montant total de la vente."
+        );
+      }
+
+      // 6. ATOMIC STOCK DECREMENT IN POSTGRESQL (PREVENT NEGATIVE OVERSELL)
       for (const update of stockUpdates) {
         const updatedCount = await tx.$executeRaw`
           UPDATE "InventoryBalance"
@@ -142,35 +167,31 @@ export class SalesService {
         }
       }
 
-      // 4. FINANCIAL CALCULATIONS
-      const subtotalMinor = calculateSubtotalMinor(saleLines);
-      const totalMinor = calculateTotalMinor(subtotalMinor, command.discountMinor || 0);
-
-      const rawPayments = command.payments || [];
       const payments: Payment[] = [];
-
       for (const p of rawPayments) {
-        payments.push({
-          id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-          saleId: "", // updated below
-          organizationId,
-          method: p.method,
-          amountMinor: p.amountMinor,
-          status: "SUCCESS",
-          recordedAt: new Date(),
-        });
+        if (p.amountMinor > 0) {
+          payments.push({
+            id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            saleId: "", // updated below
+            organizationId,
+            method: p.method,
+            amountMinor: p.amountMinor,
+            status: "SUCCESS",
+            recordedAt: new Date(),
+          });
+        }
       }
 
       const appliedPaidMinor = calculateAppliedPaidMinor(payments, totalMinor);
       const remainingMinor = calculateRemainingMinor(totalMinor, appliedPaidMinor);
       const paymentStatus = derivePaymentStatusFromMinor(totalMinor, appliedPaidMinor);
 
-      // Generate deterministic sale reference
+      // Concurrency-safe sequential reference generation
       const count = await tx.sale.count({ where: { organizationId } });
       const reference = `VTE-${String(count + 25).padStart(4, "0")}`;
       const saleId = `sale-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`;
 
-      // 5. INSERT SALE & RELATED LEDGER ROWS IN POSTGRESQL
+      // 7. INSERT SALE & RELATED LEDGER ROWS IN POSTGRESQL
       const createdSaleRow = await tx.sale.create({
         data: {
           id: saleId,
@@ -235,7 +256,7 @@ export class SalesService {
         });
       }
 
-      // 6. INSERT AUDIT EVENT & OUTBOX EVENTS IN SAME TRANSACTION
+      // 8. INSERT AUDIT EVENT & OUTBOX EVENTS IN SAME TRANSACTION
       await tx.auditEvent.create({
         data: {
           id: `audit-${Date.now()}`,
@@ -278,7 +299,7 @@ export class SalesService {
         createdAt: createdSaleRow.createdAt,
       };
 
-      // 7. FINALIZE DURABLE IDEMPOTENCY RECORD
+      // 9. FINALIZE DURABLE IDEMPOTENCY RECORD
       if (idempotencyKey) {
         await tx.idempotencyRecord.update({
           where: {

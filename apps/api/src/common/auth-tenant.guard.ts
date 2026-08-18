@@ -1,4 +1,4 @@
-import { CanActivate, ExecutionContext, Injectable, UnauthorizedException, ForbiddenException, BadRequestException, SetMetadata } from "@nestjs/common";
+import { CanActivate, ExecutionContext, Injectable, UnauthorizedException, ForbiddenException, BadRequestException, SetMetadata, Optional } from "@nestjs/common";
 import { Reflector } from "@nestjs/core";
 import { PrismaSessionRepository, PrismaMembershipRepository, PrismaOrganizationRepository, prisma } from "@jaama/database";
 import { hasPermission } from "@jaama/auth";
@@ -12,8 +12,11 @@ export class AuthTenantGuard implements CanActivate {
   private sessionRepo = new PrismaSessionRepository(prisma);
   private membershipRepo = new PrismaMembershipRepository(prisma);
   private orgRepo = new PrismaOrganizationRepository(prisma);
+  private reflector: Reflector;
 
-  public constructor(private reflector: Reflector) {}
+  public constructor(@Optional() reflector?: Reflector) {
+    this.reflector = reflector || new Reflector();
+  }
 
   public async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();

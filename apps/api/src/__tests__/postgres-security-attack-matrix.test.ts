@@ -7,14 +7,11 @@ describe("JAAMA Security Attack Matrix Integration Tests against PostgreSQL (JAA
   const salesService = new SalesService();
   const sessionRepo = new PrismaSessionRepository(prisma);
 
-  let hamidouSessionToken: string;
-
   beforeEach(async () => {
     await seedPostgresDatabase(prisma);
 
     // Create session token for Hamidou in PostgreSQL
-    const session = await sessionRepo.createSession("user-hamidou", "token-hamidou-123", new Date(Date.now() + 3600000));
-    hamidouSessionToken = session.token;
+    await sessionRepo.createSession("user-hamidou", "token-hamidou-123", new Date(Date.now() + 3600000));
 
     // Create Org B (Mali Tech) and Org B Product
     await prisma.organization.create({

@@ -4,6 +4,8 @@ import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
 import { HealthController } from "./health/health.controller";
 import { SalesController } from "./sales/sales.controller";
 import { SalesService } from "./sales/sales.service";
+import { AuthController } from "./auth/auth.controller";
+import { AuthService } from "./auth/auth.service";
 import { CorrelationMiddleware } from "./common/correlation.middleware";
 import { GlobalExceptionFilter } from "./common/global-exception.filter";
 import { AuthTenantGuard } from "./common/auth-tenant.guard";
@@ -17,9 +19,10 @@ import { AuthTenantGuard } from "./common/auth-tenant.guard";
       },
     ]),
   ],
-  controllers: [HealthController, SalesController],
+  controllers: [HealthController, SalesController, AuthController],
   providers: [
     SalesService,
+    AuthService,
     AuthTenantGuard,
     {
       provide: APP_GUARD,
