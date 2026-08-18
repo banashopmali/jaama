@@ -14,7 +14,27 @@ importers:
 
   apps/admin: {}
 
-  apps/api: {}
+  apps/api:
+    dependencies:
+      '@jaama/auth':
+        specifier: workspace:*
+        version: link:../../packages/auth
+      '@jaama/database':
+        specifier: workspace:*
+        version: link:../../packages/database
+      '@jaama/types':
+        specifier: workspace:*
+        version: link:../../packages/types
+      '@jaama/validation':
+        specifier: workspace:*
+        version: link:../../packages/validation
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)
 
   apps/marketing:
     dependencies:
@@ -132,13 +152,45 @@ importers:
         specifier: ^2.1.8
         version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)
 
+  packages/auth:
+    dependencies:
+      '@jaama/database':
+        specifier: workspace:*
+        version: link:../database
+      '@jaama/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)
+
   packages/config: {}
+
+  packages/database:
+    dependencies:
+      '@jaama/types':
+        specifier: workspace:*
+        version: link:../types
+    devDependencies:
+      typescript:
+        specifier: ^5.6.3
+        version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)
 
   packages/observability:
     devDependencies:
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)
 
   packages/testing:
     devDependencies:
@@ -154,6 +206,9 @@ importers:
       typescript:
         specifier: ^5.6.3
         version: 5.9.3
+      vitest:
+        specifier: ^2.1.9
+        version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)
 
   packages/ui:
     dependencies:
@@ -202,6 +257,10 @@ importers:
         version: 2.1.9(@types/node@20.19.43)(jsdom@25.0.1)
 
   packages/validation:
+    dependencies:
+      '@jaama/types':
+        specifier: workspace:*
+        version: link:../types
     devDependencies:
       typescript:
         specifier: ^5.6.3
