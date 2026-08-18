@@ -1,7 +1,7 @@
 import { InMemoryDatabase } from "@jaama/database";
-import { User } from "@jaama/types";
+import { User, Session } from "@jaama/types";
 import { hashPassword, verifyPassword } from "./password";
-import { createSession, revokeSession, validateSession, SessionInfo } from "./session";
+import { createSession, validateSession } from "./session";
 
 export interface RegisterUserDto {
   email: string;
@@ -21,7 +21,7 @@ export class AuthService {
   public async registerUser(
     db: InMemoryDatabase,
     dto: RegisterUserDto
-  ): Promise<{ user: User; session: SessionInfo }> {
+  ): Promise<{ user: User; session: Session }> {
     const normalizedEmail = dto.email.trim().toLowerCase();
 
     // Check email uniqueness
@@ -43,7 +43,7 @@ export class AuthService {
     db.users.set(userId, newUser);
     db.credentials.set(userId, {
       userId,
-      passwordHash: hashPassword(dto.password),
+      passwordHash: await hashPassword(dto.password),
     });
 
     const session = createSession(db, userId);
@@ -56,7 +56,7 @@ export class AuthService {
   public async loginUser(
     db: InMemoryDatabase,
     dto: LoginUserDto
-  ): Promise<{ user: User; session: SessionInfo }> {
+  ): Promise<{ user: User; session: Session }> {
     const normalizedEmail = dto.email.trim().toLowerCase();
     const GENERIC_ERROR = "Identifiants invalides.";
 
@@ -77,7 +77,7 @@ export class AuthService {
       throw new Error(GENERIC_ERROR);
     }
 
-    const isMatch = verifyPassword(dto.password, credential.passwordHash);
+    const isMatch = await verifyPassword(dto.password, credential.passwordHash);
     if (!isMatch) {
       throw new Error(GENERIC_ERROR);
     }
@@ -98,6 +98,6 @@ export class AuthService {
    * Revokes session token on logout.
    */
   public logoutUser(db: InMemoryDatabase, token: string): void {
-    revokeSession(db, token);
+    db.sessions.delete(token);
   }
 }

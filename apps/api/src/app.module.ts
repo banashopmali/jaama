@@ -1,0 +1,38 @@
+import { Module, MiddlewareConsumer, NestModule } from "@nestjs/common";
+import { APP_FILTER, APP_GUARD } from "@nestjs/core";
+import { ThrottlerModule, ThrottlerGuard } from "@nestjs/throttler";
+import { HealthController } from "./health/health.controller";
+import { SalesController } from "./sales/sales.controller";
+import { SalesService } from "./sales/sales.service";
+import { CorrelationMiddleware } from "./common/correlation.middleware";
+import { GlobalExceptionFilter } from "./common/global-exception.filter";
+import { AuthTenantGuard } from "./common/auth-tenant.guard";
+
+@Module({
+  imports: [
+    ThrottlerModule.forRoot([
+      {
+        ttl: 60000,
+        limit: 100, // 100 requests per minute per IP
+      },
+    ]),
+  ],
+  controllers: [HealthController, SalesController],
+  providers: [
+    SalesService,
+    AuthTenantGuard,
+    {
+      provide: APP_GUARD,
+      useClass: ThrottlerGuard,
+    },
+    {
+      provide: APP_FILTER,
+      useClass: GlobalExceptionFilter,
+    },
+  ],
+})
+export class AppModule implements NestModule {
+  public configure(consumer: MiddlewareConsumer) {
+    consumer.apply(CorrelationMiddleware).forRoutes("*");
+  }
+}

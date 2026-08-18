@@ -35,6 +35,7 @@ export interface Organization {
   slug: string;
   status: "active" | "suspended";
   createdAt: Date;
+  updatedAt?: Date;
 }
 
 export interface User {
@@ -43,6 +44,17 @@ export interface User {
   name: string;
   status: "active" | "disabled";
   createdAt: Date;
+  updatedAt?: Date;
+}
+
+export interface Session {
+  id: string;
+  userId: string;
+  token: string;
+  tokenHash?: string;
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt?: Date;
 }
 
 export interface Membership {
@@ -52,6 +64,7 @@ export interface Membership {
   role: Role;
   status: "active" | "disabled";
   createdAt: Date;
+  updatedAt?: Date;
 }
 
 export interface Customer {
@@ -60,6 +73,8 @@ export interface Customer {
   name: string;
   phone?: string;
   type: "walk_in" | "registered";
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface Product {
@@ -70,6 +85,8 @@ export interface Product {
   category: string;
   unitPriceMinor: number;
   status: "active" | "archived";
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export interface InventoryBalance {
@@ -78,6 +95,8 @@ export interface InventoryBalance {
   productId: string;
   availableQuantity: number;
   reservedQuantity: number;
+  createdAt?: Date;
+  updatedAt?: Date;
 }
 
 export type StockMovementType = "SALE_OUT" | "PURCHASE_IN" | "ADJUSTMENT" | "TRANSFER" | "RETURN";

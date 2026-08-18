@@ -1,93 +1,145 @@
-// Development / Testing Fixture Seed Script
-import { InMemoryDatabase } from "./repositories";
+import { PrismaClient } from "@prisma/client";
 
-export function seedInMemoryDatabase(db: InMemoryDatabase = new InMemoryDatabase()): InMemoryDatabase {
-  // 1. Organization (Diallo Commerce)
-  const org = {
-    id: "org-diallo",
-    name: "Diallo Commerce",
-    slug: "diallo-commerce",
-    status: "active" as const,
-    createdAt: new Date("2026-08-01T00:00:00Z"),
-  };
-  db.organizations.set(org.id, org);
+const prisma = new PrismaClient();
 
-  // 2. Reference User (Hamidou)
-  const user = {
-    id: "user-hamidou",
-    email: "hamidou@diallo.com",
-    name: "Hamidou Diallo",
-    status: "active" as const,
-    createdAt: new Date("2026-08-01T00:00:00Z"),
-  };
-  db.users.set(user.id, user);
+export async function seedPostgresDatabase(client: PrismaClient = prisma) {
+  // Execute clean seeding in a single database transaction
+  await client.$transaction(async (tx) => {
+    await tx.idempotencyRecord.deleteMany();
+    await tx.outboxEvent.deleteMany();
+    await tx.auditEvent.deleteMany();
+    await tx.payment.deleteMany();
+    await tx.saleLine.deleteMany();
+    await tx.sale.deleteMany();
+    await tx.stockMovement.deleteMany();
+    await tx.inventoryBalance.deleteMany();
+    await tx.product.deleteMany();
+    await tx.customer.deleteMany();
+    await tx.membership.deleteMany();
+    await tx.session.deleteMany();
+    await tx.credential.deleteMany();
+    await tx.user.deleteMany();
+    await tx.organization.deleteMany();
 
-  // 3. Credential (Password hash for Hamidou)
-  db.credentials.set(user.id, {
-    userId: user.id,
-    // Pre-calculated hash for "Password123!"
-    passwordHash: "$argon2id$v=19$m=65536,t=3,p=4$c2FsdHNhbHQ$hashhashhash",
+    // 1. Create Organization: Diallo Commerce
+    const dialloOrg = await tx.organization.create({
+      data: {
+        id: "org-diallo",
+        name: "Diallo Commerce",
+        slug: "diallo-commerce",
+        status: "active",
+      },
+    });
+
+    // 2. Create User: Hamidou Diallo
+    const hamidouUser = await tx.user.create({
+      data: {
+        id: "user-hamidou",
+        email: "hamidou@diallo.com",
+        name: "Hamidou Diallo",
+        status: "active",
+      },
+    });
+
+    // 3. Create Password Credential for Hamidou
+    const passwordHash = "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92:4f3a71b29c8e401b";
+    await tx.credential.create({
+      data: {
+        id: "cred-hamidou",
+        userId: hamidouUser.id,
+        passwordHash,
+      },
+    });
+
+    // 4. Create Membership: Hamidou is Admin of Diallo Commerce
+    await tx.membership.create({
+      data: {
+        id: "org-diallo:user-hamidou",
+        organizationId: dialloOrg.id,
+        userId: hamidouUser.id,
+        role: "admin",
+        status: "active",
+      },
+    });
+
+    // 5. Seed Products First
+    const products = [
+      {
+        id: "prod-001",
+        organizationId: dialloOrg.id,
+        sku: "SUC-100",
+        name: "Sucre Blanc 1kg",
+        category: "Épicerie",
+        unitPriceMinor: 500,
+        stock: 45,
+      },
+      {
+        id: "prod-002",
+        organizationId: dialloOrg.id,
+        sku: "HUI-200",
+        name: "Huile Dinor 1L",
+        category: "Épicerie",
+        unitPriceMinor: 1200,
+        stock: 18,
+      },
+      {
+        id: "prod-003",
+        organizationId: dialloOrg.id,
+        sku: "NID-300",
+        name: "Lait Nido 400g",
+        category: "Épicerie",
+        unitPriceMinor: 5000,
+        stock: 10,
+      },
+      {
+        id: "prod-004",
+        organizationId: dialloOrg.id,
+        sku: "RIZ-400",
+        name: "Riz Parfumé 5kg",
+        category: "Sacs",
+        unitPriceMinor: 6500,
+        stock: 20,
+      },
+    ];
+
+    for (const p of products) {
+      await tx.product.create({
+        data: {
+          id: p.id,
+          organizationId: p.organizationId,
+          sku: p.sku,
+          name: p.name,
+          category: p.category,
+          unitPriceMinor: p.unitPriceMinor,
+          status: "active",
+        },
+      });
+    }
+
+    // 6. Seed Inventory Balances Second
+    for (const p of products) {
+      await tx.inventoryBalance.create({
+        data: {
+          id: `ib-${p.id}`,
+          organizationId: p.organizationId,
+          productId: p.id,
+          availableQuantity: p.stock,
+          reservedQuantity: 0,
+        },
+      });
+    }
   });
 
-  // 4. Membership (Owner / Admin)
-  const membership = {
-    id: "mem-hamidou-diallo",
-    organizationId: org.id,
-    userId: user.id,
-    role: "admin" as const,
-    status: "active" as const,
-    createdAt: new Date("2026-08-01T00:00:00Z"),
-  };
-  db.memberships.set(`${org.id}:${user.id}`, membership);
+  console.log("PostgreSQL Database successfully seeded!");
+}
 
-  // 5. Customers
-  const walkIn = {
-    id: "cust-walk-in",
-    organizationId: org.id,
-    name: "Client comptoir",
-    type: "walk_in" as const,
-  };
-  db.customers.set(`${org.id}:${walkIn.id}`, walkIn);
-
-  const awa = {
-    id: "cust-awa",
-    organizationId: org.id,
-    name: "Awa Traoré",
-    phone: "+223 70 00 11 22",
-    type: "registered" as const,
-  };
-  db.customers.set(`${org.id}:${awa.id}`, awa);
-
-  // 6. Products & Inventory
-  const products = [
-    { id: "prod-001", sku: "COC-50", name: "Coca-Cola 50cl", category: "Boissons", unitPriceMinor: 500, stock: 24 },
-    { id: "prod-002", sku: "EAU-15", name: "Eau minérale 1.5L", category: "Boissons", unitPriceMinor: 750, stock: 32 },
-    { id: "prod-003", sku: "NID-400", name: "Lait Nido 400g", category: "Alimentation", unitPriceMinor: 4500, stock: 3 },
-    { id: "prod-004", sku: "RIZ-5K", name: "Riz Parfumé 5kg", category: "Alimentation", unitPriceMinor: 6500, stock: 12 },
-    { id: "prod-005", sku: "HUI-1L", name: "Huile de Tournesol 1L", category: "Alimentation", unitPriceMinor: 1500, stock: 8 },
-  ];
-
-  for (const p of products) {
-    const product = {
-      id: p.id,
-      organizationId: org.id,
-      sku: p.sku,
-      name: p.name,
-      category: p.category,
-      unitPriceMinor: p.unitPriceMinor,
-      status: "active" as const,
-    };
-    db.products.set(`${org.id}:${p.id}`, product);
-
-    const balance = {
-      id: `bal-${p.id}`,
-      organizationId: org.id,
-      productId: p.id,
-      availableQuantity: p.stock,
-      reservedQuantity: 0,
-    };
-    db.inventoryBalances.set(`${org.id}:${p.id}`, balance);
-  }
-
-  return db;
+if (require.main === module) {
+  seedPostgresDatabase()
+    .catch((e) => {
+      console.error(e);
+      process.exit(1);
+    })
+    .finally(async () => {
+      await prisma.$disconnect();
+    });
 }

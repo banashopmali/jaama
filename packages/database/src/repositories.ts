@@ -109,3 +109,101 @@ export class InMemoryDatabase {
     this.idempotencyRecords.clear();
   }
 }
+
+export function seedInMemoryDatabase(): InMemoryDatabase {
+  const db = new InMemoryDatabase();
+
+  db.organizations.set("org-diallo", {
+    id: "org-diallo",
+    name: "Diallo Commerce",
+    slug: "diallo-commerce",
+    status: "active",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  db.users.set("user-hamidou", {
+    id: "user-hamidou",
+    email: "hamidou@diallo.com",
+    name: "Hamidou Diallo",
+    status: "active",
+    createdAt: new Date(),
+  });
+
+  db.credentials.set("user-hamidou", {
+    userId: "user-hamidou",
+    passwordHash: "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92:4f3a71b29c8e401b",
+  });
+
+  db.memberships.set("org-diallo:user-hamidou", {
+    id: "mem-hamidou",
+    organizationId: "org-diallo",
+    userId: "user-hamidou",
+    role: "admin",
+    status: "active",
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  });
+
+  const products: Product[] = [
+    {
+      id: "prod-001",
+      organizationId: "org-diallo",
+      sku: "SUC-100",
+      name: "Sucre Blanc 1kg",
+      category: "Épicerie",
+      unitPriceMinor: 500,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+    {
+      id: "prod-002",
+      organizationId: "org-diallo",
+      sku: "HUI-200",
+      name: "Huile Dinor 1L",
+      category: "Épicerie",
+      unitPriceMinor: 1200,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+    {
+      id: "prod-003",
+      organizationId: "org-diallo",
+      sku: "NID-300",
+      name: "Lait Nido 400g",
+      category: "Épicerie",
+      unitPriceMinor: 4500,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+    {
+      id: "prod-004",
+      organizationId: "org-diallo",
+      sku: "RIZ-400",
+      name: "Riz Parfumé 5kg",
+      category: "Sacs",
+      unitPriceMinor: 6500,
+      status: "active",
+      createdAt: new Date(),
+      updatedAt: new Date(),
+    },
+  ];
+
+  for (const p of products) {
+    db.products.set(p.id, p);
+    db.products.set(`org-diallo:${p.id}`, p);
+    db.inventoryBalances.set(`org-diallo:${p.id}`, {
+      id: `ib-${p.id}`,
+      organizationId: "org-diallo",
+      productId: p.id,
+      availableQuantity: p.id === "prod-001" ? 45 : p.id === "prod-002" ? 18 : p.id === "prod-003" ? 3 : 12,
+      reservedQuantity: 0,
+      updatedAt: new Date(),
+    });
+  }
+
+  return db;
+}

@@ -87,7 +87,7 @@ model Session {
   id        String   @id @default(uuid())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  token     String   @unique
+  tokenHash String   @unique
   expiresAt DateTime
   createdAt DateTime @default(now())
 
@@ -109,6 +109,7 @@ model Organization {
   stockMovements     StockMovement[]
   sales              Sale[]
   payments           Payment[]
+  saleLines          SaleLine[]
   auditEvents        AuditEvent[]
   outboxEvents       OutboxEvent[]
   idempotencyRecords IdempotencyRecord[]
@@ -141,7 +142,7 @@ model Customer {
 
   sales Sale[]
 
-  @@index([organizationId, id])
+  @@unique([organizationId, id])
   @@index([organizationId, name])
 }
 
@@ -157,25 +158,26 @@ model Product {
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  inventoryBalance InventoryBalance?
-  stockMovements   StockMovement[]
-  saleLines        SaleLine[]
+  inventoryBalances InventoryBalance[]
+  stockMovements    StockMovement[]
+  saleLines         SaleLine[]
 
+  @@unique([organizationId, id])
   @@unique([organizationId, sku])
-  @@index([organizationId, id])
 }
 
 model InventoryBalance {
   id                String       @id @default(uuid())
   organizationId    String
   organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  productId         String       @unique
-  product           Product      @relation(fields: [productId], references: [id], onDelete: Cascade)
+  productId         String
+  product           Product      @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Cascade)
   availableQuantity Int          @default(0)
   reservedQuantity  Int          @default(0)
   updatedAt         DateTime     @updatedAt
 
   @@unique([organizationId, productId])
+  @@unique([organizationId, id])
 }
 
 model StockMovement {
@@ -183,12 +185,13 @@ model StockMovement {
   organizationId String
   organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   productId      String
-  product        Product           @relation(fields: [productId], references: [id], onDelete: Cascade)
+  product        Product           @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Cascade)
   movementType   StockMovementType
   quantityDelta  Int
   reference      String?
   recordedAt     DateTime          @default(now())
 
+  @@unique([organizationId, id])
   @@index([organizationId, productId, recordedAt])
 }
 
@@ -198,7 +201,7 @@ model Sale {
   organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   reference      String
   customerId     String?
-  customer       Customer?     @relation(fields: [customerId], references: [id], onDelete: SetNull)
+  customer       Customer?     @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: SetNull)
   sellerUserId   String
   seller         User          @relation("SellerSales", fields: [sellerUserId], references: [id], onDelete: Restrict)
   subtotalMinor  Int
@@ -214,37 +217,42 @@ model Sale {
   lines    SaleLine[]
   payments Payment[]
 
+  @@unique([organizationId, id])
   @@unique([organizationId, reference])
   @@index([organizationId, occurredAt])
   @@index([organizationId, customerId])
 }
 
 model SaleLine {
-  id                  String  @id @default(uuid())
+  id                  String       @id @default(uuid())
+  organizationId      String
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   saleId              String
-  sale                Sale    @relation(fields: [saleId], references: [id], onDelete: Cascade)
+  sale                Sale         @relation(fields: [organizationId, saleId], references: [organizationId, id], onDelete: Cascade)
   productId           String
-  product             Product @relation(fields: [productId], references: [id], onDelete: Restrict)
+  product             Product      @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
   productNameSnapshot String
   skuSnapshot         String
   quantity            Int
   unitPriceMinor      Int
   lineTotalMinor      Int
 
-  @@index([saleId])
+  @@unique([organizationId, id])
+  @@index([organizationId, saleId])
 }
 
 model Payment {
   id             String              @id @default(uuid())
-  saleId         String
-  sale           Sale                @relation(fields: [saleId], references: [id], onDelete: Cascade)
   organizationId String
   organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  saleId         String
+  sale           Sale                @relation(fields: [organizationId, saleId], references: [organizationId, id], onDelete: Cascade)
   method         PaymentMethod
   amountMinor    Int
   status         PaymentRecordStatus @default(SUCCESS)
   recordedAt     DateTime            @default(now())
 
+  @@unique([organizationId, id])
   @@index([organizationId, saleId])
 }
 

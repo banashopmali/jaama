@@ -1,6 +1,5 @@
 import { describe, it, expect, beforeEach } from "vitest";
-import { InMemoryDatabase } from "../repositories";
-import { seedInMemoryDatabase } from "../seed";
+import { InMemoryDatabase, seedInMemoryDatabase } from "../repositories";
 
 describe("JAAMA Database & Persistence Foundation (JAA-S0-08)", () => {
   let db: InMemoryDatabase;

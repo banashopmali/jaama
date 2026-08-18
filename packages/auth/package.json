@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "@jaama/database": "workspace:*",
-    "@jaama/types": "workspace:*"
+    "@jaama/types": "workspace:*",
+    "argon2": "^0.41.1"
   },
   "devDependencies": {
     "typescript": "^5.6.3",
