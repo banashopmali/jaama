@@ -1,6 +1,17 @@
-import React from "react";
-import { ModulePlaceholder } from "@/components/app-shell/ModulePlaceholder";
+import React, { Suspense } from "react";
+import { SalesListView, SalesLoading, SalesStateMode } from "@/features/sales";
 
-export default function VentesPage() {
-  return <ModulePlaceholder title="Ventes" moduleKey="ventes" />;
+export interface VentesPageProps {
+  searchParams?: { salesState?: string } | Promise<{ salesState?: string }>;
+}
+
+export default async function VentesPage({ searchParams }: VentesPageProps) {
+  const resolvedSearchParams = await Promise.resolve(searchParams);
+  const salesState = (resolvedSearchParams?.salesState as SalesStateMode) || "populated";
+
+  return (
+    <Suspense fallback={<SalesLoading />}>
+      <SalesListView salesState={salesState} />
+    </Suspense>
+  );
 }
