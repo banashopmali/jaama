@@ -55,6 +55,7 @@ export interface PosConfirmedSaleSummary {
   paymentMethod: PaymentMethod;
   paymentStatus: PaymentStatus;
   saleStatus: SaleStatus;
+  isSimulated?: boolean;
 }
 
 export interface PosState {
@@ -70,4 +71,6 @@ export interface PosState {
   paymentAllocations: PosPaymentAllocation[]; // For mixed payments
   confirmedSale: PosConfirmedSaleSummary | null;
   validationError: string | null;
+  idempotencyKey: string; // Transient idempotency key per sale attempt
+  isSubmitting?: boolean;
 }

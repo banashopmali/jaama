@@ -36,6 +36,7 @@ export interface CheckoutViewProps {
   onUpdateAllocationMethod: (id: string, method: Exclude<PaymentMethod, "mixed" | "credit">) => void;
   onBackToCart: () => void;
   onConfirmSale: () => void;
+  isSubmitting?: boolean;
 }
 
 export const CheckoutView: React.FC<CheckoutViewProps> = ({
@@ -57,6 +58,7 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
   onUpdateAllocationMethod,
   onBackToCart,
   onConfirmSale,
+  isSubmitting = false,
 }) => {
   const subtotal = calculateSubtotal(cart);
   const totalAmount = calculateTotal(subtotal, discountAmount);

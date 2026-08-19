@@ -1,5 +1,6 @@
 {
   "$schema": "https://turbo.build/schema.json",
+  "globalEnv": ["DATABASE_URL", "NODE_ENV", "JWT_SECRET", "NEXT_PUBLIC_API_URL"],
   "tasks": {
     "build": {
       "dependsOn": ["^build"],
@@ -11,6 +12,9 @@
     },
     "lint": {},
     "typecheck": {},
-    "test": {}
+    "test": {
+      "dependsOn": ["^test"],
+      "cache": false
+    }
   }
 }

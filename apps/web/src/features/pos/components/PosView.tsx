@@ -1,16 +1,23 @@
 import React from "react";
 import { PosStateMode } from "../pos.types";
 import { PosHeader } from "./PosHeader";
-import { PosInteractiveSection } from "./PosInteractiveSection";
+import { PosInteractiveSection, PosInteractiveSectionProps } from "./PosInteractiveSection";
 import { PosLoading } from "./PosLoading";
 import { PosErrorState } from "./PosErrorState";
 import { PosNoCatalogState } from "./PosNoCatalogState";
+import { PosApiContext } from "../pos.api";
 
 export interface PosViewProps {
   posState?: PosStateMode;
+  apiContext?: PosApiContext;
+  apiAdapter?: PosInteractiveSectionProps["apiAdapter"];
 }
 
-export const PosView: React.FC<PosViewProps> = ({ posState = "ready" }) => {
+export const PosView: React.FC<PosViewProps> = ({
+  posState = "ready",
+  apiContext,
+  apiAdapter,
+}) => {
   // 1. Loading State
   if (posState === "loading") {
     return <PosLoading />;
@@ -37,5 +44,5 @@ export const PosView: React.FC<PosViewProps> = ({ posState = "ready" }) => {
   }
 
   // 4. Ready State (Default)
-  return <PosInteractiveSection />;
+  return <PosInteractiveSection apiContext={apiContext} apiAdapter={apiAdapter} />;
 };

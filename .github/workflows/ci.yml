@@ -11,6 +11,25 @@ jobs:
     name: Validate Monorepo
     runs-on: ubuntu-latest
 
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: jaama_user
+          POSTGRES_PASSWORD: jaama_pass
+          POSTGRES_DB: jaama_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: "postgresql://jaama_user:jaama_pass@localhost:5432/jaama_db?schema=public"
+      NODE_ENV: "test"
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,8 +42,20 @@ jobs:
       - name: Install pnpm
         run: npm install -g pnpm@11.7.0
 
+      - name: Approve build scripts
+        run: pnpm approve-builds --all
+
       - name: Install dependencies
         run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm --filter @jaama/database db:generate
+
+      - name: Run Prisma Database Migrations
+        run: pnpm --filter @jaama/database db:migrate:deploy
+
+      - name: Seed Test PostgreSQL Database
+        run: pnpm --filter @jaama/database db:seed
 
       - name: Run Lint
         run: pnpm lint

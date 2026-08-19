@@ -12,7 +12,7 @@
     "build": "turbo build",
     "lint": "turbo lint",
     "typecheck": "turbo typecheck",
-    "test": "turbo test"
+    "test": "turbo test --concurrency=1"
   },
   "packageManager": "pnpm@11.7.0",
   "devDependencies": {

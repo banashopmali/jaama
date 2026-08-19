@@ -1,0 +1,301 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+enum Role {
+  owner
+  admin
+  employe
+  comptable
+  vendeur
+}
+
+enum StockMovementType {
+  SALE_OUT
+  PURCHASE_IN
+  ADJUSTMENT
+  TRANSFER
+  RETURN
+}
+
+enum SaleStatus {
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  TO_COLLECT
+  PARTIALLY_PAID
+  PAID
+}
+
+enum PaymentMethod {
+  cash
+  wave
+  orange_money
+  bank_transfer
+  card
+}
+
+enum PaymentRecordStatus {
+  SUCCESS
+  FAILED
+  REVERSED
+}
+
+enum OutboxStatus {
+  PENDING
+  PROCESSED
+  FAILED
+}
+
+enum IdempotencyStatus {
+  PROCESSING
+  COMPLETED
+}
+
+model User {
+  id        String   @id @default(uuid())
+  email     String   @unique
+  name      String
+  status    String   @default("active") // "active" | "disabled"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  credential  Credential?
+  sessions    Session[]
+  memberships Membership[]
+  sales       Sale[]       @relation("SellerSales")
+  auditEvents AuditEvent[] @relation("ActorAuditEvents")
+}
+
+model Credential {
+  id           String   @id @default(uuid())
+  userId       String   @unique
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  passwordHash String
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+}
+
+model Session {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String   @unique
+  expiresAt DateTime
+  createdAt DateTime @default(now())
+
+  @@index([userId])
+}
+
+model Organization {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  status    String   @default("active") // "active" | "suspended"
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  memberships        Membership[]
+  customers          Customer[]
+  products           Product[]
+  inventoryBalances  InventoryBalance[]
+  stockMovements     StockMovement[]
+  sales              Sale[]
+  payments           Payment[]
+  saleLines          SaleLine[]
+  auditEvents        AuditEvent[]
+  outboxEvents       OutboxEvent[]
+  idempotencyRecords IdempotencyRecord[]
+}
+
+model Membership {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role           Role         @default(vendeur)
+  status         String       @default("active") // "active" | "disabled"
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  @@unique([organizationId, userId])
+  @@index([userId])
+}
+
+model Customer {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  phone          String?
+  type           String       @default("walk_in") // "walk_in" | "registered"
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  sales Sale[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, name])
+}
+
+model Product {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sku            String
+  name           String
+  category       String
+  unitPriceMinor Int
+  status         String       @default("active") // "active" | "archived"
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  inventoryBalances InventoryBalance[]
+  stockMovements    StockMovement[]
+  saleLines         SaleLine[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, sku])
+}
+
+model InventoryBalance {
+  id                String       @id @default(uuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId         String
+  product           Product      @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Cascade)
+  availableQuantity Int          @default(0)
+  reservedQuantity  Int          @default(0)
+  updatedAt         DateTime     @updatedAt
+
+  @@unique([organizationId, productId])
+  @@unique([organizationId, id])
+}
+
+model StockMovement {
+  id             String            @id @default(uuid())
+  organizationId String
+  organization   Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product           @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Cascade)
+  movementType   StockMovementType
+  quantityDelta  Int
+  reference      String?
+  recordedAt     DateTime          @default(now())
+
+  @@unique([organizationId, id])
+  @@index([organizationId, productId, recordedAt])
+}
+
+model Sale {
+  id             String        @id @default(uuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reference      String
+  customerId     String?
+  customer       Customer?     @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: SetNull)
+  sellerUserId   String
+  seller         User          @relation("SellerSales", fields: [sellerUserId], references: [id], onDelete: Restrict)
+  subtotalMinor  Int
+  discountMinor  Int           @default(0)
+  totalMinor     Int
+  paidMinor      Int           @default(0)
+  remainingMinor Int
+  saleStatus     SaleStatus    @default(COMPLETED)
+  paymentStatus  PaymentStatus @default(TO_COLLECT)
+  occurredAt     DateTime      @default(now())
+  createdAt      DateTime      @default(now())
+
+  lines    SaleLine[]
+  payments Payment[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, reference])
+  @@index([organizationId, occurredAt])
+  @@index([organizationId, customerId])
+}
+
+model SaleLine {
+  id                  String       @id @default(uuid())
+  organizationId      String
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  saleId              String
+  sale                Sale         @relation(fields: [organizationId, saleId], references: [organizationId, id], onDelete: Cascade)
+  productId           String
+  product             Product      @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  productNameSnapshot String
+  skuSnapshot         String
+  quantity            Int
+  unitPriceMinor      Int
+  lineTotalMinor      Int
+
+  @@unique([organizationId, id])
+  @@index([organizationId, saleId])
+}
+
+model Payment {
+  id             String              @id @default(uuid())
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  saleId         String
+  sale           Sale                @relation(fields: [organizationId, saleId], references: [organizationId, id], onDelete: Cascade)
+  method         PaymentMethod
+  amountMinor    Int
+  status         PaymentRecordStatus @default(SUCCESS)
+  recordedAt     DateTime            @default(now())
+
+  @@unique([organizationId, id])
+  @@index([organizationId, saleId])
+}
+
+model AuditEvent {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actorId        String
+  actor          User         @relation("ActorAuditEvents", fields: [actorId], references: [id], onDelete: Cascade)
+  action         String
+  resourceType   String
+  resourceId     String
+  metadataJson   String       @default("{}")
+  requestId      String?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
+}
+
+model OutboxEvent {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  eventType      String
+  aggregateType  String
+  aggregateId    String
+  payloadJson    String
+  status         OutboxStatus @default(PENDING)
+  createdAt      DateTime     @default(now())
+
+  @@index([status, createdAt])
+}
+
+model IdempotencyRecord {
+  id              String            @id @default(uuid())
+  organizationId  String
+  organization    Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  operation       String
+  idempotencyKey  String
+  requestHash     String
+  status          IdempotencyStatus @default(PROCESSING)
+  responseJson    String?
+  createdAt       DateTime          @default(now())
+
+  @@unique([organizationId, operation, idempotencyKey])
+}
