@@ -14,6 +14,8 @@ import { InvoicesModule } from "./invoices/invoices.module";
 import { ExpensesModule } from "./expenses/expenses.module";
 import { SuppliersModule } from "./suppliers/suppliers.module";
 import { PurchasesModule } from "./purchases/purchases.module";
+import { PosAdvancedModule } from "./pos-advanced/pos-advanced.module";
+import { FinancialsModule } from "./financials/financials.module";
 import { CorrelationMiddleware } from "./common/correlation.middleware";
 import { GlobalExceptionFilter } from "./common/global-exception.filter";
 import { AuthTenantGuard } from "./common/auth-tenant.guard";
@@ -34,6 +36,8 @@ import { AuthTenantGuard } from "./common/auth-tenant.guard";
     ExpensesModule,
     SuppliersModule,
     PurchasesModule,
+    PosAdvancedModule,
+    FinancialsModule,
   ],
   controllers: [HealthController, SalesController, AuthController],
   providers: [
