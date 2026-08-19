@@ -5,7 +5,7 @@ import {
   UseGuards,
   Req,
 } from "@nestjs/common";
-import { AuthTenantGuard, RequirePermission, AuthenticatedRequest } from "../common/auth-tenant.guard";
+import { AuthTenantGuard, RequirePermission } from "../common/auth-tenant.guard";
 import { FinancialsService } from "./financials.service";
 
 @Controller("api/v1/financials")
@@ -16,7 +16,7 @@ export class FinancialsController {
   @Get("cashflow")
   @RequirePermission("sales.read")
   public async getCashflow(
-    @Req() req: AuthenticatedRequest,
+    @Req() req: any,
     @Query("startDate") startDate?: string,
     @Query("endDate") endDate?: string
   ) {

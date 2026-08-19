@@ -3,57 +3,39 @@ import {
   Get,
   Post,
   Body,
-  Query,
+  Param,
   UseGuards,
   Req,
 } from "@nestjs/common";
-import { AuthTenantGuard, RequirePermission, AuthenticatedRequest } from "../common/auth-tenant.guard";
-import { InventoryService, RecordStockAdjustmentDto } from "./inventory.service";
+import { AuthTenantGuard, RequirePermission } from "../common/auth-tenant.guard";
+import { InventoryService } from "./inventory.service";
 
 @Controller("api/v1/inventory")
 @UseGuards(AuthTenantGuard)
 export class InventoryController {
   constructor(private readonly inventoryService: InventoryService) {}
 
-  @Get()
+  @Get("balances")
   @RequirePermission("inventory.read")
-  public async listInventory(
-    @Req() req: AuthenticatedRequest,
-    @Query("status") status?: "normal" | "low" | "out_of_stock",
-    @Query("category") category?: string,
-    @Query("search") search?: string,
-    @Query("page") page?: string,
-    @Query("limit") limit?: string
+  public async getBalances(@Req() req: any) {
+    return this.inventoryService.listInventory(req.userContext);
+  }
+
+  @Get("movements/:productId")
+  @RequirePermission("inventory.read")
+  public async getMovementsHistory(
+    @Req() req: any,
+    @Param("productId") productId: string
   ) {
-    return this.inventoryService.listInventory(req.userContext, {
-      status,
-      category,
-      search,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
-    });
+    return this.inventoryService.getStockMovements(req.userContext, productId);
   }
 
   @Post("adjustments")
   @RequirePermission("inventory.adjust")
   public async recordAdjustment(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: RecordStockAdjustmentDto
+    @Req() req: any,
+    @Body() dto: any
   ) {
     return this.inventoryService.recordAdjustment(req.userContext, dto);
-  }
-
-  @Get("movements")
-  @RequirePermission("inventory.read")
-  public async getStockMovements(
-    @Req() req: AuthenticatedRequest,
-    @Query("productId") productId?: string,
-    @Query("limit") limit?: string
-  ) {
-    return this.inventoryService.getStockMovements(
-      req.userContext,
-      productId,
-      limit ? parseInt(limit, 10) : 50
-    );
   }
 }

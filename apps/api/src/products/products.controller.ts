@@ -3,75 +3,57 @@ import {
   Get,
   Post,
   Put,
-  Patch,
+  Delete,
   Body,
   Param,
   Query,
   UseGuards,
   Req,
 } from "@nestjs/common";
-import { AuthTenantGuard, RequirePermission, AuthenticatedRequest } from "../common/auth-tenant.guard";
-import { ProductsService, CreateProductDto, UpdateProductDto } from "./products.service";
+import { AuthTenantGuard, RequirePermission } from "../common/auth-tenant.guard";
+import { ProductsService } from "./products.service";
 
 @Controller("api/v1/products")
 @UseGuards(AuthTenantGuard)
 export class ProductsController {
   constructor(private readonly productsService: ProductsService) {}
 
-  @Post()
-  @RequirePermission("products.manage")
-  public async createProduct(
-    @Req() req: AuthenticatedRequest,
-    @Body() dto: CreateProductDto
-  ) {
-    const product = await this.productsService.createProduct(req.userContext, dto);
-    return product;
-  }
-
   @Get()
   @RequirePermission("products.read")
   public async listProducts(
-    @Req() req: AuthenticatedRequest,
-    @Query("category") category?: string,
-    @Query("status") status?: string,
+    @Req() req: any,
     @Query("search") search?: string,
-    @Query("page") page?: string,
-    @Query("limit") limit?: string
+    @Query("category") category?: string,
+    @Query("status") status?: string
   ) {
-    return this.productsService.listProducts(req.userContext, {
-      category,
-      status,
-      search,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
-    });
+    return this.productsService.listProducts(req.userContext, { search, category, status });
   }
 
   @Get(":id")
   @RequirePermission("products.read")
-  public async getProduct(
-    @Req() req: AuthenticatedRequest,
-    @Param("id") id: string
-  ) {
+  public async getProduct(@Req() req: any, @Param("id") id: string) {
     return this.productsService.getProduct(req.userContext, id);
+  }
+
+  @Post()
+  @RequirePermission("products.manage")
+  public async createProduct(@Req() req: any, @Body() dto: any) {
+    return this.productsService.createProduct(req.userContext, dto);
   }
 
   @Put(":id")
   @RequirePermission("products.manage")
   public async updateProduct(
-    @Req() req: AuthenticatedRequest,
+    @Req() req: any,
     @Param("id") id: string,
-    @Body() dto: UpdateProductDto
+    @Body() dto: any
   ) {
     return this.productsService.updateProduct(req.userContext, id, dto);
   }
 
-  @Patch(":id/archive")
+  @Delete(":id")
   @RequirePermission("products.manage")
-  public async archiveProduct(
-    @Req() req: AuthenticatedRequest,
-    @Param("id") id: string
-  ) {
+  public async archiveProduct(@Req() req: any, @Param("id") id: string) {
     return this.productsService.archiveProduct(req.userContext, id);
   }
 }
