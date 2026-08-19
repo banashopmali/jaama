@@ -25,6 +25,56 @@ export function sanitizeCsvField(val: string): string {
   return clean;
 }
 
+export function parseCsvContent(csvText: string): string[][] {
+  if (!csvText || !csvText.trim()) return [];
+  const rows: string[][] = [];
+  let currentRow: string[] = [];
+  let currentVal = "";
+  let inQuotes = false;
+
+  for (let i = 0; i < csvText.length; i++) {
+    const char = csvText[i];
+    const nextChar = csvText[i + 1];
+
+    if (inQuotes) {
+      if (char === '"' && nextChar === '"') {
+        currentVal += '"';
+        i++;
+      } else if (char === '"') {
+        inQuotes = false;
+      } else {
+        currentVal += char;
+      }
+    } else {
+      if (char === '"') {
+        inQuotes = true;
+      } else if (char === ';' || char === ',') {
+        currentRow.push(currentVal.trim());
+        currentVal = "";
+      } else if (char === '\n' || (char === '\r' && nextChar === '\n')) {
+        if (char === '\r') i++;
+        currentRow.push(currentVal.trim());
+        if (currentRow.some((col) => col.length > 0)) {
+          rows.push(currentRow);
+        }
+        currentRow = [];
+        currentVal = "";
+      } else {
+        currentVal += char;
+      }
+    }
+  }
+
+  if (currentVal || currentRow.length > 0) {
+    currentRow.push(currentVal.trim());
+    if (currentRow.some((col) => col.length > 0)) {
+      rows.push(currentRow);
+    }
+  }
+
+  return rows;
+}
+
 @Injectable()
 export class DataExchangeService {
   /**
@@ -57,6 +107,7 @@ export class DataExchangeService {
   public async importProductsBulk(
     userContext: UserContext,
     items: ImportProductItem[],
+    idempotencyKey?: string,
     prismaClient = defaultPrisma
   ): Promise<{ importedCount: number; products: any[] }> {
     const organizationId = userContext.organizationId;
@@ -74,6 +125,21 @@ export class DataExchangeService {
       }
       if (item.unitPriceMinor === undefined || item.unitPriceMinor < 0) {
         throw new BadRequestException(`Prix unitaire invalide pour le produit ${item.sku}.`);
+      }
+    }
+
+    if (idempotencyKey) {
+      const existingRecord = await prismaClient.idempotencyRecord.findUnique({
+        where: {
+          organizationId_operation_idempotencyKey: {
+            organizationId,
+            operation: "products.import",
+            idempotencyKey,
+          },
+        },
+      });
+      if (existingRecord && existingRecord.status === "COMPLETED" && existingRecord.responseJson) {
+        return JSON.parse(existingRecord.responseJson);
       }
     }
 
@@ -148,10 +214,36 @@ export class DataExchangeService {
         },
       });
 
-      return {
+      const responsePayload = {
         importedCount: createdProducts.length,
         products: createdProducts,
       };
+
+      if (idempotencyKey) {
+        await tx.idempotencyRecord.upsert({
+          where: {
+            organizationId_operation_idempotencyKey: {
+              organizationId,
+              operation: "products.import",
+              idempotencyKey,
+            },
+          },
+          create: {
+            organizationId,
+            operation: "products.import",
+            idempotencyKey,
+            requestHash: "bulk-import-products",
+            status: "COMPLETED",
+            responseJson: JSON.stringify(responsePayload),
+          },
+          update: {
+            status: "COMPLETED",
+            responseJson: JSON.stringify(responsePayload),
+          },
+        });
+      }
+
+      return responsePayload;
     });
   }
 
@@ -186,6 +278,7 @@ export class DataExchangeService {
   public async importCustomersBulk(
     userContext: UserContext,
     items: ImportCustomerItem[],
+    idempotencyKey?: string,
     prismaClient = defaultPrisma
   ): Promise<{ importedCount: number; customers: any[] }> {
     const organizationId = userContext.organizationId;
@@ -197,6 +290,21 @@ export class DataExchangeService {
     for (const item of items) {
       if (!item.name || item.name.trim().length === 0) {
         throw new BadRequestException("Chaque client importé doit comporter un nom.");
+      }
+    }
+
+    if (idempotencyKey) {
+      const existingRecord = await prismaClient.idempotencyRecord.findUnique({
+        where: {
+          organizationId_operation_idempotencyKey: {
+            organizationId,
+            operation: "customers.import",
+            idempotencyKey,
+          },
+        },
+      });
+      if (existingRecord && existingRecord.status === "COMPLETED" && existingRecord.responseJson) {
+        return JSON.parse(existingRecord.responseJson);
       }
     }
 
@@ -232,10 +340,36 @@ export class DataExchangeService {
         },
       });
 
-      return {
+      const responsePayload = {
         importedCount: createdCustomers.length,
         customers: createdCustomers,
       };
+
+      if (idempotencyKey) {
+        await tx.idempotencyRecord.upsert({
+          where: {
+            organizationId_operation_idempotencyKey: {
+              organizationId,
+              operation: "customers.import",
+              idempotencyKey,
+            },
+          },
+          create: {
+            organizationId,
+            operation: "customers.import",
+            idempotencyKey,
+            requestHash: "bulk-import-customers",
+            status: "COMPLETED",
+            responseJson: JSON.stringify(responsePayload),
+          },
+          update: {
+            status: "COMPLETED",
+            responseJson: JSON.stringify(responsePayload),
+          },
+        });
+      }
+
+      return responsePayload;
     });
   }
 }

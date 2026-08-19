@@ -10,7 +10,6 @@ import {
   UseGuards,
   Req,
   Optional,
-  Header,
 } from "@nestjs/common";
 import { AuthTenantGuard, RequirePermission } from "../common/auth-tenant.guard";
 import { ProductsService } from "./products.service";
@@ -34,24 +33,6 @@ export class ProductsController {
     @Query("status") status?: string
   ) {
     return this.productsService.listProducts(req.userContext, { search, category, status });
-  }
-
-  @Get("export")
-  @RequirePermission("exports.read")
-  @Header("Content-Type", "text/csv; charset=utf-8")
-  @Header("Content-Disposition", 'attachment; filename="produits-jaama.csv"')
-  public async exportProductsCsv(@Req() req: any) {
-    const { DataExchangeService } = await import("../data-exchange/data-exchange.service");
-    const service = new DataExchangeService();
-    return service.exportProductsCsv(req.userContext);
-  }
-
-  @Post("import")
-  @RequirePermission("imports.manage")
-  public async importProductsCsv(@Req() req: any, @Body("items") items: any[]) {
-    const { DataExchangeService } = await import("../data-exchange/data-exchange.service");
-    const service = new DataExchangeService();
-    return service.importProductsBulk(req.userContext, items);
   }
 
   @Get(":id")

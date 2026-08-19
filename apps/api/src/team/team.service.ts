@@ -146,24 +146,39 @@ export class TeamService {
       }
 
       // Find or create User
-      let user = await tx.user.findUnique({ where: { email: invitation.email } });
+      let user = await tx.user.findUnique({
+        where: { email: invitation.email },
+        include: { credential: true },
+      });
+
       if (!user) {
+        if (!dto.password || typeof dto.password !== "string" || dto.password.length < 8) {
+          throw new BadRequestException("Le mot de passe est obligatoire pour créer votre compte (8 caractères minimum).");
+        }
+
         const userName = dto.name ? dto.name.trim() : invitation.email.split("@")[0];
         user = await tx.user.create({
           data: {
             email: invitation.email,
             name: userName,
           },
+          include: { credential: true },
         });
 
-        const rawPassword = dto.password || "JaamaDefaultPassword2026!";
-        const passwordHash = await hashPassword(rawPassword);
+        const passwordHash = await hashPassword(dto.password);
         await tx.credential.create({
           data: {
             userId: user.id,
             passwordHash,
           },
         });
+      } else {
+        if (dto.password && user.credential) {
+          const valid = await verifyPassword(dto.password, user.credential.passwordHash);
+          if (!valid) {
+            throw new UnauthorizedException("Mot de passe incorrect pour le compte utilisateur existant.");
+          }
+        }
       }
 
       // Upsert Membership

@@ -128,6 +128,13 @@ export class PurchasesService {
     }
 
     return prismaClient.$transaction(async (tx) => {
+      // Lock Organization Row for Concurrency-Safe Purchase Reference Generation
+      await tx.$executeRaw`
+        UPDATE "Organization"
+        SET "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "id" = ${organizationId}
+      `;
+
       const supplier = await tx.supplier.findUnique({
         where: { organizationId_id: { organizationId, id: dto.supplierId } },
       });

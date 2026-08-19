@@ -41,18 +41,20 @@ export class DataExchangeController {
   @RequirePermission("imports.manage")
   public async importProducts(
     @Req() req: any,
-    @Body("items") items: ImportProductItem[]
+    @Body("items") items: ImportProductItem[],
+    @Body("idempotencyKey") idempotencyKey?: string
   ) {
-    return this.dataExchangeService.importProductsBulk(req.userContext, items);
+    return this.dataExchangeService.importProductsBulk(req.userContext, items, idempotencyKey);
   }
 
   @Post("data-exchange/products/import")
   @RequirePermission("imports.manage")
   public async importProductsAlias(
     @Req() req: any,
-    @Body("items") items: ImportProductItem[]
+    @Body("items") items: ImportProductItem[],
+    @Body("idempotencyKey") idempotencyKey?: string
   ) {
-    return this.dataExchangeService.importProductsBulk(req.userContext, items);
+    return this.dataExchangeService.importProductsBulk(req.userContext, items, idempotencyKey);
   }
 
   @Get("customers/export")
@@ -67,8 +69,9 @@ export class DataExchangeController {
   @RequirePermission("imports.manage")
   public async importCustomers(
     @Req() req: any,
-    @Body("items") items: ImportCustomerItem[]
+    @Body("items") items: ImportCustomerItem[],
+    @Body("idempotencyKey") idempotencyKey?: string
   ) {
-    return this.dataExchangeService.importCustomersBulk(req.userContext, items);
+    return this.dataExchangeService.importCustomersBulk(req.userContext, items, idempotencyKey);
   }
 }

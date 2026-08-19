@@ -26,9 +26,21 @@ export class AuthTenantGuard implements CanActivate {
   public async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest<AuthenticatedRequest>();
 
-    // 1. AUTHENTICATION (Bearer token from Authorization header or x-session-token)
-    const authHeader = request.headers["authorization"] || request.headers["x-session-token"];
-    const token = typeof authHeader === "string" ? authHeader.replace(/^Bearer\s+/i, "").trim() : "";
+    // 1. AUTHENTICATION (HttpOnly cookie, Authorization header, or x-session-token)
+    let token = "";
+    if ((request as any).cookies && (request as any).cookies.jaama_session) {
+      token = (request as any).cookies.jaama_session;
+    }
+    if (!token && typeof request.headers["cookie"] === "string") {
+      const match = request.headers["cookie"].match(/jaama_session=([^;]+)/);
+      if (match && match[1]) {
+        token = decodeURIComponent(match[1]);
+      }
+    }
+    if (!token) {
+      const authHeader = request.headers["authorization"] || request.headers["x-session-token"];
+      token = typeof authHeader === "string" ? authHeader.replace(/^Bearer\s+/i, "").trim() : "";
+    }
 
     if (!token) {
       throw new UnauthorizedException("Authentification requise. Jeton de session manquant.");

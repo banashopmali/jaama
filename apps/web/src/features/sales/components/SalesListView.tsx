@@ -23,19 +23,22 @@ export const SalesListView: React.FC<SalesListViewProps> = ({
   const activeState = overrideState || salesState || "populated";
   const { apiFetch } = useWorkspace();
 
-  const [sales, setSales] = useState<SaleListItem[]>(
-    activeState === "empty" ? [] : mockPopulatedSales
-  );
-  const [summary, setSummary] = useState<SalesSummaryData>(
-    activeState === "empty"
-      ? { totalSalesCount: 0, totalSalesAmount: 0, totalCollectedAmount: 0, totalToCollectAmount: 0 }
-      : mockSummaryData
-  );
-  const [loading, setLoading] = useState<boolean>(activeState === "loading");
+  const [sales, setSales] = useState<SaleListItem[]>([]);
+  const [summary, setSummary] = useState<SalesSummaryData>({
+    totalSalesCount: 0,
+    totalSalesAmount: 0,
+    totalCollectedAmount: 0,
+    totalToCollectAmount: 0,
+  });
+  const [loading, setLoading] = useState<boolean>(!salesState && !overrideState);
   const [error, setError] = useState<string | null>(activeState === "error" ? "Erreur de chargement des ventes." : null);
 
   const loadSalesData = async () => {
     if (salesState || overrideState) {
+      if (salesState === "populated" || overrideState === "populated") {
+        setSales(mockPopulatedSales);
+        setSummary(mockSummaryData);
+      }
       setLoading(false);
       return;
     }
@@ -43,8 +46,8 @@ export const SalesListView: React.FC<SalesListViewProps> = ({
     setError(null);
     try {
       const res = await apiFetch("/api/v1/sales");
-      const rawSales = res.data || res.sales || [];
-      if (Array.isArray(rawSales) && rawSales.length > 0) {
+      const rawSales = res.data || res.sales || (Array.isArray(res) ? res : []);
+      if (Array.isArray(rawSales)) {
         const mapped: SaleListItem[] = rawSales.map((s: any) => ({
           id: s.id,
           reference: s.reference,
@@ -65,7 +68,7 @@ export const SalesListView: React.FC<SalesListViewProps> = ({
               ? "Partiellement payée"
               : "À encaisser",
           saleStatus: s.status === "CANCELLED" || s.saleStatus === "Annulée" ? "Annulée" : "Terminée",
-          seller: { id: s.seller?.id || "user-1", name: s.seller?.name || "Hamidou" },
+          seller: { id: s.seller?.id || s.sellerUserId || "", name: s.seller?.name || "Vendeur" },
         }));
 
         const summaryData: SalesSummaryData = {
@@ -78,9 +81,10 @@ export const SalesListView: React.FC<SalesListViewProps> = ({
         setSales(mapped);
         setSummary(summaryData);
       }
-    } catch {
-      setSales(mockPopulatedSales);
-      setSummary(mockSummaryData);
+    } catch (err: any) {
+      setError(err?.message || "Erreur de chargement des ventes depuis le serveur.");
+      setSales([]);
+      setSummary({ totalSalesCount: 0, totalSalesAmount: 0, totalCollectedAmount: 0, totalToCollectAmount: 0 });
     } finally {
       setLoading(false);
     }
