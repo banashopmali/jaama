@@ -96,7 +96,7 @@ describe("JAA-S1-02 — Inventory Core Integration Tests against PostgreSQL", ()
 
     await inventoryService.recordAdjustment(adminContext, {
       productId: product.id,
-      movementType: "PURCHASE_IN",
+      movementType: "ADJUSTMENT_IN",
       quantityDelta: 100,
     });
 
@@ -109,6 +109,6 @@ describe("JAA-S1-02 — Inventory Core Integration Tests against PostgreSQL", ()
     const movements = await inventoryService.getStockMovements(adminContext, product.id);
     expect(movements.length).toBe(2);
     expect(movements[0].movementType).toBe("ADJUSTMENT_OUT");
-    expect(movements[1].movementType).toBe("PURCHASE_IN");
+    expect(movements[1].movementType).toBe("ADJUSTMENT_IN");
   });
 });

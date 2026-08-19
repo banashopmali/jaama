@@ -49,7 +49,14 @@ export class PurchasesService {
     }
 
     return prismaClient.$transaction(async (tx) => {
-      // 1. Verify Supplier
+      // 1. Lock Organization Row for Concurrency-Safe Reference Generation
+      await tx.$executeRaw`
+        UPDATE "Organization"
+        SET "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "id" = ${organizationId}
+      `;
+
+      // 2. Verify Supplier
       const supplier = await tx.supplier.findUnique({
         where: {
           organizationId_id: {
@@ -62,7 +69,7 @@ export class PurchasesService {
         throw new BadRequestException("Fournisseur introuvable.");
       }
 
-      // 2. Fetch Products
+      // 3. Fetch Products
       const productIds = dto.lines.map((l) => l.productId);
       const products = await tx.product.findMany({
         where: {
@@ -146,8 +153,7 @@ export class PurchasesService {
   }
 
   /**
-   * JAA-S1-09: Goods Receiving Workflow
-   * Atomically increments stock balance (PURCHASE_IN) in InventoryBalance & StockMovement
+   * JAA-S1-09: Goods Receiving Workflow with P0 Over-receiving & Concurrency Protection
    */
   public async receivePurchase(
     userContext: UserContext,
@@ -162,6 +168,13 @@ export class PurchasesService {
     }
 
     return prismaClient.$transaction(async (tx) => {
+      // 1. Lock Organization Row for Concurrency-Safe Reference Generation
+      await tx.$executeRaw`
+        UPDATE "Organization"
+        SET "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "id" = ${organizationId}
+      `;
+
       const purchase = await tx.purchase.findUnique({
         where: {
           organizationId_id: {
@@ -196,6 +209,28 @@ export class PurchasesService {
         }
         if (recLine.quantityReceived <= 0) {
           throw new BadRequestException("La quantité réceptionnée doit être supérieure à zéro.");
+        }
+
+        // P0 Row Lock on PurchaseLine to prevent concurrent over-receiving
+        const lockedLines: any[] = await tx.$queryRaw`
+          SELECT "id", "orderedQuantity", "receivedQuantity"
+          FROM "PurchaseLine"
+          WHERE "organizationId" = ${organizationId}
+            AND "id" = ${pLine.id}
+          FOR UPDATE
+        `;
+
+        const lockedLine = lockedLines[0];
+        if (!lockedLine) {
+          throw new NotFoundException("Ligne de commande d'achat introuvable.");
+        }
+
+        // P0 Over-Receiving Verification: alreadyReceived + incoming <= orderedQuantity
+        const remainingToReceive = lockedLine.orderedQuantity - lockedLine.receivedQuantity;
+        if (recLine.quantityReceived > remainingToReceive) {
+          throw new BadRequestException(
+            `Dépassement de la quantité commandée pour le produit ${recLine.productId}. Restant à recevoir : ${remainingToReceive}, quantité fournie : ${recLine.quantityReceived}.`
+          );
         }
 
         // 1. Update PurchaseLine receivedQuantity

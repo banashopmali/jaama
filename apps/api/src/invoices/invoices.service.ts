@@ -39,6 +39,13 @@ export class InvoicesService {
     }
 
     return prismaClient.$transaction(async (tx) => {
+      // 1. Lock Organization Row for Concurrency-Safe Reference Generation
+      await tx.$executeRaw`
+        UPDATE "Organization"
+        SET "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "id" = ${organizationId}
+      `;
+
       let customerId: string | null = null;
       if (dto.customerId) {
         const customer = await tx.customer.findUnique({
@@ -175,6 +182,13 @@ export class InvoicesService {
     const organizationId = userContext.organizationId;
 
     return prismaClient.$transaction(async (tx) => {
+      // Lock Organization Row for Concurrency-Safe Reference Generation
+      await tx.$executeRaw`
+        UPDATE "Organization"
+        SET "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "id" = ${organizationId}
+      `;
+
       const quote = await tx.quote.findUnique({
         where: {
           organizationId_id: {

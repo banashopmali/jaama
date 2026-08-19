@@ -41,11 +41,21 @@ export class CustomersService {
       throw new BadRequestException("Le nom du client est obligatoire.");
     }
 
+    const trimmedName = dto.name.trim();
+    if (
+      trimmedName.toLowerCase() === "client comptoir" ||
+      trimmedName.toLowerCase() === "client passage"
+    ) {
+      throw new BadRequestException(
+        "Le 'Client Comptoir' ne doit pas être créé comme fiche client master. Utilisez customerId = null pour les ventes au comptoir."
+      );
+    }
+
     return prismaClient.$transaction(async (tx) => {
       const customer = await tx.customer.create({
         data: {
           organizationId,
-          name: dto.name.trim(),
+          name: trimmedName,
           phone: dto.phone ? dto.phone.trim() : null,
           email: dto.email ? dto.email.trim().toLowerCase() : null,
           address: dto.address ? dto.address.trim() : null,
@@ -206,7 +216,7 @@ export class CustomersService {
     if (query.status) {
       where.status = query.status;
     } else {
-      where.status = "active"; // Active by default
+      where.status = "active";
     }
 
     if (query.search && query.search.trim().length > 0) {

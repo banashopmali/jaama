@@ -15,6 +15,18 @@ import {
 import { validateCreateSaleCommand } from "@jaama/validation";
 import { hashCanonicalPayload } from "../common/canonical-hash";
 
+export interface ListSalesQuery {
+  search?: string;
+  startDate?: string;
+  endDate?: string;
+  customerId?: string;
+  paymentStatus?: string;
+  sellerUserId?: string;
+  paymentMethod?: string;
+  page?: number;
+  limit?: number;
+}
+
 @Injectable()
 export class SalesService {
   /**
@@ -79,8 +91,7 @@ export class SalesService {
             },
           });
         } catch (e: any) {
-          // Catch concurrent duplicate key attempt safely
-          if (e.code === "P2002") {
+          if (e.code === "P2002" || e?.message?.includes("Unique constraint")) {
             throw new ConflictException("Requête idempotente en cours de traitement.");
           }
           throw e;
@@ -189,7 +200,7 @@ export class SalesService {
         if (p.amountMinor > 0) {
           payments.push({
             id: `pay-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
-            saleId: "", // updated below
+            saleId: "",
             organizationId,
             method: p.method,
             amountMinor: p.amountMinor,
@@ -348,6 +359,7 @@ export class SalesService {
       include: {
         lines: true,
         payments: true,
+        customer: true,
       },
     });
 
@@ -377,6 +389,79 @@ export class SalesService {
       paymentStatus: sale.paymentStatus as any,
       occurredAt: sale.occurredAt,
       createdAt: sale.createdAt,
+    };
+  }
+
+  public async listSales(
+    userContext: UserContext,
+    query: ListSalesQuery = {},
+    prismaClient = defaultPrisma
+  ): Promise<{ data: any[]; total: number; summary: any; page: number; limit: number }> {
+    const organizationId = userContext.organizationId;
+    const page = Math.max(1, query.page || 1);
+    const limit = Math.max(1, Math.min(100, query.limit || 20));
+    const skip = (page - 1) * limit;
+
+    const where: any = { organizationId };
+
+    if (query.customerId) {
+      where.customerId = query.customerId;
+    }
+    if (query.sellerUserId) {
+      where.sellerUserId = query.sellerUserId;
+    }
+    if (query.paymentStatus) {
+      where.paymentStatus = query.paymentStatus;
+    }
+    if (query.startDate || query.endDate) {
+      where.occurredAt = {};
+      if (query.startDate) where.occurredAt.gte = new Date(query.startDate);
+      if (query.endDate) where.occurredAt.lte = new Date(query.endDate);
+    }
+    if (query.search && query.search.trim().length > 0) {
+      const term = query.search.trim();
+      where.OR = [
+        { reference: { contains: term, mode: "insensitive" } },
+        { customer: { name: { contains: term, mode: "insensitive" } } },
+      ];
+    }
+    if (query.paymentMethod) {
+      where.payments = { some: { method: query.paymentMethod } };
+    }
+
+    const [sales, total, aggregate] = await Promise.all([
+      prismaClient.sale.findMany({
+        where,
+        include: {
+          lines: true,
+          customer: { select: { id: true, name: true } },
+          payments: true,
+        },
+        orderBy: { occurredAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prismaClient.sale.count({ where }),
+      prismaClient.sale.aggregate({
+        where,
+        _sum: {
+          totalMinor: true,
+          paidMinor: true,
+          remainingMinor: true,
+        },
+      }),
+    ]);
+
+    return {
+      data: sales,
+      total,
+      summary: {
+        totalSalesMinor: aggregate._sum.totalMinor || 0,
+        totalCollectedMinor: aggregate._sum.paidMinor || 0,
+        totalOutstandingMinor: aggregate._sum.remainingMinor || 0,
+      },
+      page,
+      limit,
     };
   }
 }

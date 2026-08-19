@@ -37,7 +37,14 @@ export class QuotesService {
     }
 
     return prismaClient.$transaction(async (tx) => {
-      // 1. Validate Customer if provided
+      // 1. Lock Organization Row for Concurrency-Safe Reference Generation
+      await tx.$executeRaw`
+        UPDATE "Organization"
+        SET "updatedAt" = CURRENT_TIMESTAMP
+        WHERE "id" = ${organizationId}
+      `;
+
+      // 2. Validate Customer if provided
       let customerId: string | null = null;
       if (dto.customerId) {
         const customer = await tx.customer.findUnique({
@@ -54,7 +61,7 @@ export class QuotesService {
         customerId = customer.id;
       }
 
-      // 2. Fetch Products and validate lines
+      // 3. Fetch Products and validate lines
       const productIds = dto.lines.map((l) => l.productId);
       const products = await tx.product.findMany({
         where: {
@@ -91,11 +98,11 @@ export class QuotesService {
       const discountMinor = Math.max(0, Math.min(dto.discountMinor || 0, subtotalMinor));
       const totalMinor = subtotalMinor - discountMinor;
 
-      // 3. Generate Reference
+      // 4. Generate Reference Concurrency-Safely
       const count = await tx.quote.count({ where: { organizationId } });
       const reference = `DEV-${new Date().getFullYear()}-${(count + 1).toString().padStart(4, "0")}`;
 
-      // 4. Insert Quote Record
+      // 5. Insert Quote Record
       const quote = await tx.quote.create({
         data: {
           organizationId,
@@ -117,7 +124,7 @@ export class QuotesService {
         },
       });
 
-      // 5. Audit & Outbox
+      // 6. Audit & Outbox
       await tx.auditEvent.create({
         data: {
           organizationId,

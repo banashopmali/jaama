@@ -42,7 +42,7 @@ export class ProductsService {
     prismaClient = defaultPrisma
   ): Promise<Product> {
     const organizationId = userContext.organizationId;
-    const skuClean = dto.sku.trim().toUpperCase();
+    const skuClean = dto.sku ? dto.sku.trim().toUpperCase() : "";
 
     if (!dto.name || dto.name.trim().length === 0) {
       throw new BadRequestException("Le nom du produit est obligatoire.");
@@ -50,88 +50,105 @@ export class ProductsService {
     if (!skuClean) {
       throw new BadRequestException("Le SKU du produit est obligatoire.");
     }
-    if (dto.unitPriceMinor === undefined || dto.unitPriceMinor < 0) {
+    if (dto.unitPriceMinor === undefined || dto.unitPriceMinor < 0 || !Number.isInteger(dto.unitPriceMinor)) {
       throw new BadRequestException("Le prix unitaire doit être un entier positif ou nul.");
     }
+    if (dto.costMinor !== undefined && (dto.costMinor < 0 || !Number.isInteger(dto.costMinor))) {
+      throw new BadRequestException("Le coût unitaire doit être un entier positif ou nul.");
+    }
+    if (dto.lowStockThreshold !== undefined && dto.lowStockThreshold < 0) {
+      throw new BadRequestException("Le seuil de stock bas ne peut pas être négatif.");
+    }
+    if (dto.initialStock !== undefined && dto.initialStock < 0) {
+      throw new BadRequestException("Le stock initial ne peut pas être négatif.");
+    }
 
-    return prismaClient.$transaction(async (tx) => {
-      // 1. SKU Uniqueness check within organization
-      const existing = await tx.product.findUnique({
-        where: {
-          organizationId_sku: {
+    try {
+      return await prismaClient.$transaction(async (tx) => {
+        // 1. SKU Uniqueness check within organization
+        const existing = await tx.product.findUnique({
+          where: {
+            organizationId_sku: {
+              organizationId,
+              sku: skuClean,
+            },
+          },
+        });
+
+        if (existing) {
+          throw new BadRequestException("Un produit avec ce SKU existe déjà dans votre organisation.");
+        }
+
+        // 2. Create Product
+        const product = await tx.product.create({
+          data: {
             organizationId,
             sku: skuClean,
+            name: dto.name.trim(),
+            category: dto.category ? dto.category.trim() : "Général",
+            unitPriceMinor: Math.round(dto.unitPriceMinor),
+            costMinor: dto.costMinor !== undefined ? Math.round(dto.costMinor) : null,
+            description: dto.description ? dto.description.trim() : null,
+            barcode: dto.barcode ? dto.barcode.trim() : null,
+            lowStockThreshold: dto.lowStockThreshold ?? 5,
+            status: "active",
           },
-        },
-      });
+        });
 
-      if (existing) {
-        throw new BadRequestException("Un produit avec ce SKU existe déjà dans votre organisation.");
-      }
-
-      // 2. Create Product
-      const product = await tx.product.create({
-        data: {
-          organizationId,
-          sku: skuClean,
-          name: dto.name.trim(),
-          category: dto.category ? dto.category.trim() : "Général",
-          unitPriceMinor: Math.round(dto.unitPriceMinor),
-          costMinor: dto.costMinor !== undefined ? Math.round(dto.costMinor) : null,
-          description: dto.description ? dto.description.trim() : null,
-          barcode: dto.barcode ? dto.barcode.trim() : null,
-          lowStockThreshold: dto.lowStockThreshold ?? 5,
-          status: "active",
-        },
-      });
-
-      // 3. Initialize Inventory Balance
-      const initialQty = dto.initialStock && dto.initialStock > 0 ? dto.initialStock : 0;
-      await tx.inventoryBalance.create({
-        data: {
-          organizationId,
-          productId: product.id,
-          availableQuantity: initialQty,
-          reservedQuantity: 0,
-        },
-      });
-
-      if (initialQty > 0) {
-        await tx.stockMovement.create({
+        // 3. Initialize Inventory Balance
+        const initialQty = dto.initialStock && dto.initialStock > 0 ? Math.round(dto.initialStock) : 0;
+        await tx.inventoryBalance.create({
           data: {
             organizationId,
             productId: product.id,
-            movementType: "OPENING",
-            quantityDelta: initialQty,
-            reference: "STOCK-INITIAL",
+            availableQuantity: initialQty,
+            reservedQuantity: 0,
           },
         });
+
+        if (initialQty > 0) {
+          await tx.stockMovement.create({
+            data: {
+              organizationId,
+              productId: product.id,
+              movementType: "OPENING",
+              quantityDelta: initialQty,
+              reference: "STOCK-INITIAL",
+            },
+          });
+        }
+
+        // 4. Audit & Outbox
+        await tx.auditEvent.create({
+          data: {
+            organizationId,
+            actorId: userContext.actorId,
+            action: "product.create",
+            resourceType: "product",
+            resourceId: product.id,
+            metadataJson: JSON.stringify({ sku: product.sku, name: product.name, unitPriceMinor: product.unitPriceMinor }),
+          },
+        });
+
+        await tx.outboxEvent.create({
+          data: {
+            organizationId,
+            eventType: "ProductCreated",
+            aggregateType: "Product",
+            aggregateId: product.id,
+            payloadJson: JSON.stringify({ productId: product.id, sku: product.sku, name: product.name }),
+          },
+        });
+
+        return product as Product;
+      });
+    } catch (err: any) {
+      if (err instanceof BadRequestException) throw err;
+      if (err?.code === "P2002") {
+        throw new BadRequestException("Un produit avec ce SKU existe déjà dans votre organisation.");
       }
-
-      // 4. Audit & Outbox
-      await tx.auditEvent.create({
-        data: {
-          organizationId,
-          actorId: userContext.actorId,
-          action: "product.create",
-          resourceType: "product",
-          resourceId: product.id,
-          metadataJson: JSON.stringify({ sku: product.sku, name: product.name, unitPriceMinor: product.unitPriceMinor }),
-        },
-      });
-
-      await tx.outboxEvent.create({
-        data: {
-          organizationId,
-          eventType: "ProductCreated",
-          aggregateType: "Product",
-          aggregateId: product.id,
-          payloadJson: JSON.stringify({ productId: product.id, sku: product.sku, name: product.name }),
-        },
-      });
-
-      return product as Product;
-    });
+      throw err;
+    }
   }
 
   public async updateProduct(
@@ -142,79 +159,87 @@ export class ProductsService {
   ): Promise<Product> {
     const organizationId = userContext.organizationId;
 
-    return prismaClient.$transaction(async (tx) => {
-      const existing = await tx.product.findUnique({
-        where: {
-          organizationId_id: {
-            organizationId,
-            id: productId,
-          },
-        },
-      });
+    if (dto.unitPriceMinor !== undefined && (dto.unitPriceMinor < 0 || !Number.isInteger(dto.unitPriceMinor))) {
+      throw new BadRequestException("Le prix unitaire doit être un entier positif ou nul.");
+    }
+    if (dto.costMinor !== undefined && (dto.costMinor < 0 || !Number.isInteger(dto.costMinor))) {
+      throw new BadRequestException("Le coût unitaire doit être un entier positif ou nul.");
+    }
+    if (dto.lowStockThreshold !== undefined && dto.lowStockThreshold < 0) {
+      throw new BadRequestException("Le seuil de stock bas ne peut pas être négatif.");
+    }
 
-      if (!existing) {
-        throw new NotFoundException("Produit introuvable.");
-      }
-
-      let newSku = existing.sku;
-      if (dto.sku && dto.sku.trim().toUpperCase() !== existing.sku) {
-        newSku = dto.sku.trim().toUpperCase();
-        const skuCheck = await tx.product.findUnique({
+    try {
+      return await prismaClient.$transaction(async (tx) => {
+        const existing = await tx.product.findUnique({
           where: {
-            organizationId_sku: {
+            organizationId_id: {
               organizationId,
-              sku: newSku,
+              id: productId,
             },
           },
         });
-        if (skuCheck) {
-          throw new BadRequestException("Un autre produit utilise déjà ce SKU dans votre organisation.");
+
+        if (!existing) {
+          throw new NotFoundException("Produit introuvable.");
         }
-      }
 
-      const updated = await tx.product.update({
-        where: {
-          organizationId_id: {
-            organizationId,
-            id: productId,
+        let newSku = existing.sku;
+        if (dto.sku && dto.sku.trim().toUpperCase() !== existing.sku) {
+          newSku = dto.sku.trim().toUpperCase();
+          const skuCheck = await tx.product.findUnique({
+            where: {
+              organizationId_sku: {
+                organizationId,
+                sku: newSku,
+              },
+            },
+          });
+          if (skuCheck) {
+            throw new BadRequestException("Un autre produit utilise déjà ce SKU dans votre organisation.");
+          }
+        }
+
+        const updated = await tx.product.update({
+          where: {
+            organizationId_id: {
+              organizationId,
+              id: productId,
+            },
           },
-        },
-        data: {
-          ...(dto.name !== undefined && { name: dto.name.trim() }),
-          sku: newSku,
-          ...(dto.category !== undefined && { category: dto.category.trim() }),
-          ...(dto.unitPriceMinor !== undefined && { unitPriceMinor: Math.round(dto.unitPriceMinor) }),
-          ...(dto.costMinor !== undefined && { costMinor: Math.round(dto.costMinor) }),
-          ...(dto.description !== undefined && { description: dto.description }),
-          ...(dto.barcode !== undefined && { barcode: dto.barcode }),
-          ...(dto.lowStockThreshold !== undefined && { lowStockThreshold: dto.lowStockThreshold }),
-          ...(dto.status !== undefined && { status: dto.status }),
-        },
-      });
+          data: {
+            ...(dto.name !== undefined && { name: dto.name.trim() }),
+            sku: newSku,
+            ...(dto.category !== undefined && { category: dto.category.trim() }),
+            ...(dto.unitPriceMinor !== undefined && { unitPriceMinor: Math.round(dto.unitPriceMinor) }),
+            ...(dto.costMinor !== undefined && { costMinor: Math.round(dto.costMinor) }),
+            ...(dto.description !== undefined && { description: dto.description }),
+            ...(dto.barcode !== undefined && { barcode: dto.barcode }),
+            ...(dto.lowStockThreshold !== undefined && { lowStockThreshold: dto.lowStockThreshold }),
+            ...(dto.status !== undefined && { status: dto.status }),
+          },
+        });
 
-      await tx.auditEvent.create({
-        data: {
-          organizationId,
-          actorId: userContext.actorId,
-          action: "product.update",
-          resourceType: "product",
-          resourceId: productId,
-          metadataJson: JSON.stringify({ updatedFields: Object.keys(dto) }),
-        },
-      });
+        await tx.auditEvent.create({
+          data: {
+            organizationId,
+            actorId: userContext.actorId,
+            action: "product.update",
+            resourceType: "product",
+            resourceId: productId,
+            metadataJson: JSON.stringify({ updatedFields: Object.keys(dto) }),
+          },
+        });
 
-      await tx.outboxEvent.create({
-        data: {
-          organizationId,
-          eventType: "ProductUpdated",
-          aggregateType: "Product",
-          aggregateId: productId,
-          payloadJson: JSON.stringify({ productId, name: updated.name, unitPriceMinor: updated.unitPriceMinor }),
-        },
+        return updated as Product;
       });
-
-      return updated as Product;
-    });
+    } catch (err: any) {
+      if (err instanceof BadRequestException || err instanceof NotFoundException) throw err;
+      if (err?.code === "P2002") {
+        throw new BadRequestException("Un produit avec ce SKU existe déjà dans votre organisation.");
+      }
+      throw err;
+    }
   }
 
   public async getProduct(
@@ -268,7 +293,7 @@ export class ProductsService {
     if (query.status) {
       where.status = query.status;
     } else {
-      where.status = { in: ["active", "inactive"] }; // Hide archived by default
+      where.status = { in: ["active", "inactive"] };
     }
 
     if (query.search && query.search.trim().length > 0) {

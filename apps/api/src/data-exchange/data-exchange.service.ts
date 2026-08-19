@@ -9,10 +9,19 @@ export interface ImportProductItem {
   unitPriceMinor: number;
 }
 
+function escapeCsvValue(val: string): string {
+  if (!val) return "";
+  const clean = val.replace(/;/g, ",");
+  if (clean.startsWith("=") || clean.startsWith("+") || clean.startsWith("-") || clean.startsWith("@")) {
+    return `'${clean}`;
+  }
+  return clean;
+}
+
 @Injectable()
 export class DataExchangeService {
   /**
-   * JAA-S1-19: CSV / JSON Product Export Engine
+   * JAA-S1-16: CSV Product Export Engine with Formula Injection Protection
    */
   public async exportProductsCsv(
     userContext: UserContext,
@@ -26,16 +35,17 @@ export class DataExchangeService {
 
     let csv = "SKU;Nom;Catégorie;PrixUnitaireMinor;Statut\n";
     for (const p of products) {
-      const name = p.name.replace(/;/g, ",");
-      const category = p.category.replace(/;/g, ",");
-      csv += `${p.sku};${name};${category};${p.unitPriceMinor};${p.status}\n`;
+      const sku = escapeCsvValue(p.sku);
+      const name = escapeCsvValue(p.name);
+      const category = escapeCsvValue(p.category);
+      csv += `${sku};${name};${category};${p.unitPriceMinor};${p.status}\n`;
     }
 
     return csv;
   }
 
   /**
-   * JAA-S1-19: Product CSV Import Validation & Bulk Ingestion Engine
+   * JAA-S1-16: Product CSV Import Validation & Bulk Ingestion Engine
    */
   public async importProductsBulk(
     userContext: UserContext,
@@ -55,7 +65,7 @@ export class DataExchangeService {
       if (!item.name || item.name.trim().length === 0) {
         throw new BadRequestException("Chaque produit importé doit comporter un nom.");
       }
-      if (!item.unitPriceMinor || item.unitPriceMinor < 0) {
+      if (item.unitPriceMinor === undefined || item.unitPriceMinor < 0) {
         throw new BadRequestException(`Prix unitaire invalide pour le produit ${item.sku}.`);
       }
     }
@@ -64,7 +74,7 @@ export class DataExchangeService {
       const createdProducts: any[] = [];
 
       for (const item of items) {
-        const sku = item.sku.trim();
+        const sku = item.sku.trim().toUpperCase();
         const existing = await tx.product.findUnique({
           where: {
             organizationId_sku: {
@@ -75,7 +85,6 @@ export class DataExchangeService {
         });
 
         if (existing) {
-          // Update existing product
           const updated = await tx.product.update({
             where: {
               organizationId_sku: {
@@ -91,7 +100,6 @@ export class DataExchangeService {
           });
           createdProducts.push(updated);
         } else {
-          // Create product
           const created = await tx.product.create({
             data: {
               organizationId,
@@ -103,7 +111,6 @@ export class DataExchangeService {
             },
           });
 
-          // Initialize balance
           await tx.inventoryBalance.create({
             data: {
               organizationId,

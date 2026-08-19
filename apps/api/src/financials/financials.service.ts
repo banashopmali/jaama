@@ -14,7 +14,7 @@ export interface CashflowSummary {
 @Injectable()
 export class FinancialsService {
   /**
-   * JAA-S1-14 / JAA-S1-15: Computes authoritative West-African financial ledger & cashflow summary
+   * Computes authoritative financial ledger & cashflow summary using canonical payment method keys.
    */
   public async getCashflowSummary(
     userContext: UserContext,
@@ -66,19 +66,19 @@ export class FinancialsService {
     const totalExpensesMinor = expenseAggregate._sum?.amountMinor || 0;
 
     const byPaymentMethod: Record<string, number> = {
-      ESPECES: 0,
-      WAVE: 0,
-      ORANGE_MONEY: 0,
-      VIREMENT: 0,
-      CARTE: 0,
-      CREDIT: 0,
+      cash: 0,
+      wave: 0,
+      orange_money: 0,
+      bank_transfer: 0,
+      card: 0,
     };
 
     for (const p of payments) {
-      if (byPaymentMethod[p.method] !== undefined) {
-        byPaymentMethod[p.method] += p.amountMinor;
+      const key = p.method ? String(p.method).toLowerCase() : "cash";
+      if (byPaymentMethod[key] !== undefined) {
+        byPaymentMethod[key] += p.amountMinor;
       } else {
-        byPaymentMethod[p.method] = p.amountMinor;
+        byPaymentMethod[key] = p.amountMinor;
       }
     }
 
@@ -91,23 +91,6 @@ export class FinancialsService {
       totalExpensesMinor,
       netCashflowMinor,
       byPaymentMethod,
-    };
-  }
-
-  /**
-   * JAA-S1-15: Helper calculation for West-African VAT (TVA 18% standard rate in UEMOA)
-   */
-  public computeTvaXof(amountTtcMinor: number, tvaRateFraction = 0.18): {
-    htMinor: number;
-    tvaMinor: number;
-    ttcMinor: number;
-  } {
-    const htMinor = Math.round(amountTtcMinor / (1 + tvaRateFraction));
-    const tvaMinor = amountTtcMinor - htMinor;
-    return {
-      htMinor,
-      tvaMinor,
-      ttcMinor: amountTtcMinor,
     };
   }
 }

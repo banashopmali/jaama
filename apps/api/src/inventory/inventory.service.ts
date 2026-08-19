@@ -19,6 +19,11 @@ export interface ListInventoryQuery {
 
 @Injectable()
 export class InventoryService {
+  /**
+   * Controlled Manual Stock Adjustment
+   * Restricts manual movements strictly to ADJUSTMENT_IN, ADJUSTMENT_OUT, ADJUSTMENT, and OPENING.
+   * Rejects SALE_OUT and PURCHASE_IN (which belong to Sales & Purchasing engines).
+   */
   public async recordAdjustment(
     userContext: UserContext,
     dto: RecordStockAdjustmentDto,
@@ -35,6 +40,19 @@ export class InventoryService {
     }
     if (quantityDelta === undefined || quantityDelta === 0) {
       throw new BadRequestException("La quantité de mouvement doit être différente de zéro.");
+    }
+
+    const allowedManualMovements: StockMovementType[] = [
+      "ADJUSTMENT",
+      "ADJUSTMENT_IN",
+      "ADJUSTMENT_OUT",
+      "OPENING",
+    ];
+
+    if (!allowedManualMovements.includes(movementType)) {
+      throw new BadRequestException(
+        `Mouvement '${movementType}' interdit en ajustement manuel. Seuls ADJUSTMENT_IN, ADJUSTMENT_OUT et OPENING sont autorisés.`
+      );
     }
 
     return prismaClient.$transaction(async (tx) => {
@@ -74,15 +92,11 @@ export class InventoryService {
       }
 
       // Compute actual delta based on movement type
-      let actualDelta = quantityDelta;
-      if (
-        movementType === "SALE_OUT" ||
-        movementType === "ADJUSTMENT_OUT" ||
-        movementType === "RETURN_OUT"
-      ) {
+      let actualDelta = Math.abs(quantityDelta);
+      if (movementType === "ADJUSTMENT_OUT") {
         actualDelta = -Math.abs(quantityDelta);
-      } else {
-        actualDelta = Math.abs(quantityDelta);
+      } else if (movementType === "ADJUSTMENT") {
+        actualDelta = quantityDelta;
       }
 
       // Check negative stock prevention (P0 invariant)
@@ -93,7 +107,7 @@ export class InventoryService {
         );
       }
 
-      // 3. Update Balance atomically using raw SQL or optimistic check
+      // 3. Update Balance atomically using raw SQL
       const updatedCount = await tx.$executeRaw`
         UPDATE "InventoryBalance"
         SET "availableQuantity" = "availableQuantity" + ${actualDelta}
@@ -164,6 +178,9 @@ export class InventoryService {
     });
   }
 
+  /**
+   * Database-level filtering for inventory pagination and accurate totals.
+   */
   public async listInventory(
     userContext: UserContext,
     query: ListInventoryQuery = {},
@@ -178,6 +195,14 @@ export class InventoryService {
 
     if (query.category && query.category !== "Tous") {
       where.category = query.category;
+    }
+
+    if (query.status === "out_of_stock") {
+      where.inventoryBalances = { some: { availableQuantity: { lte: 0 } } };
+    } else if (query.status === "low") {
+      where.inventoryBalances = { some: { availableQuantity: { gt: 0, lte: 5 } } };
+    } else if (query.status === "normal") {
+      where.inventoryBalances = { some: { availableQuantity: { gt: 5 } } };
     }
 
     if (query.search && query.search.trim().length > 0) {
@@ -224,12 +249,8 @@ export class InventoryService {
       };
     });
 
-    const filteredData = query.status
-      ? data.filter((item) => item.stockStatus === query.status)
-      : data;
-
     return {
-      data: filteredData,
+      data,
       total,
       page,
       limit,
