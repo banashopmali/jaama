@@ -6,14 +6,20 @@ import {
   Param,
   UseGuards,
   Req,
+  Optional,
 } from "@nestjs/common";
 import { AuthTenantGuard, RequirePermission } from "../common/auth-tenant.guard";
-import { PurchasesService } from "./purchases.service";
+import { PurchasesService, CreatePurchaseDto, ReceivePurchaseDto } from "./purchases.service";
 
 @Controller("api/v1/purchases")
 @UseGuards(AuthTenantGuard)
 export class PurchasesController {
-  constructor(private readonly purchasesService: PurchasesService) {}
+  private readonly purchasesService: PurchasesService;
+
+  constructor(@Optional() purchasesService?: PurchasesService) {
+    this.purchasesService = purchasesService || new PurchasesService();
+  }
+
 
   @Get()
   @RequirePermission("purchases.read")
@@ -29,7 +35,7 @@ export class PurchasesController {
 
   @Post()
   @RequirePermission("purchases.manage")
-  public async createPurchase(@Req() req: any, @Body() dto: any) {
+  public async createPurchase(@Req() req: any, @Body() dto: CreatePurchaseDto) {
     return this.purchasesService.createPurchase(req.userContext, dto);
   }
 
@@ -38,7 +44,7 @@ export class PurchasesController {
   public async receivePurchase(
     @Req() req: any,
     @Param("id") id: string,
-    @Body() dto: any
+    @Body() dto: ReceivePurchaseDto
   ) {
     return this.purchasesService.receivePurchase(req.userContext, id, dto);
   }

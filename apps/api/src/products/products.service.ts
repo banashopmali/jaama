@@ -2,11 +2,11 @@ import { Injectable, BadRequestException, NotFoundException } from "@nestjs/comm
 import { prisma as defaultPrisma } from "@jaama/database";
 import { Product, UserContext } from "@jaama/types";
 
-export interface CreateProductDto {
-  sku: string;
-  name: string;
-  category: string;
-  unitPriceMinor: number;
+export class CreateProductDto {
+  sku!: string;
+  name!: string;
+  category!: string;
+  unitPriceMinor!: number;
   costMinor?: number;
   description?: string;
   barcode?: string;
@@ -14,7 +14,7 @@ export interface CreateProductDto {
   initialStock?: number;
 }
 
-export interface UpdateProductDto {
+export class UpdateProductDto {
   name?: string;
   sku?: string;
   category?: string;
@@ -26,7 +26,7 @@ export interface UpdateProductDto {
   status?: "active" | "inactive" | "archived";
 }
 
-export interface ListProductsQuery {
+export class ListProductsQuery {
   category?: string;
   status?: string;
   search?: string;

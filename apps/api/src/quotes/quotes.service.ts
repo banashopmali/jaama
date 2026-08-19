@@ -2,20 +2,20 @@ import { Injectable, BadRequestException, NotFoundException } from "@nestjs/comm
 import { prisma as defaultPrisma } from "@jaama/database";
 import { UserContext } from "@jaama/types";
 
-export interface CreateQuoteLineDto {
-  productId: string;
-  quantity: number;
+export class CreateQuoteLineDto {
+  productId!: string;
+  quantity!: number;
 }
 
-export interface CreateQuoteDto {
+export class CreateQuoteDto {
   customerId?: string;
-  lines: CreateQuoteLineDto[];
+  lines!: CreateQuoteLineDto[];
   discountMinor?: number;
   expirationDate?: string;
   notes?: string;
 }
 
-export interface ListQuotesQuery {
+export class ListQuotesQuery {
   status?: string;
   customerId?: string;
   search?: string;

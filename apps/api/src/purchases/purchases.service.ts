@@ -1,30 +1,38 @@
-import { Injectable, BadRequestException, NotFoundException } from "@nestjs/common";
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ConflictException,
+} from "@nestjs/common";
 import { prisma as defaultPrisma } from "@jaama/database";
 import { UserContext } from "@jaama/types";
+import { hashCanonicalPayload } from "../common/canonical-hash";
 
-export interface CreatePurchaseLineDto {
-  productId: string;
-  quantity: number;
-  unitCostMinor: number;
+export class CreatePurchaseLineDto {
+  productId!: string;
+  quantity!: number;
+  unitCostMinor!: number;
+  totalCostMinor?: number;
 }
 
-export interface CreatePurchaseDto {
-  supplierId: string;
-  lines: CreatePurchaseLineDto[];
+export class CreatePurchaseDto {
+  supplierId!: string;
+  lines!: CreatePurchaseLineDto[];
   notes?: string;
 }
 
-export interface ReceiveLineDto {
-  productId: string;
-  quantityReceived: number;
+export class ReceiveLineDto {
+  productId!: string;
+  quantityReceived!: number;
 }
 
-export interface ReceivePurchaseDto {
-  lines: ReceiveLineDto[];
+export class ReceivePurchaseDto {
+  idempotencyKey!: string;
+  lines!: ReceiveLineDto[];
   notes?: string;
 }
 
-export interface ListPurchasesQuery {
+export class ListPurchasesQuery {
   supplierId?: string;
   status?: string;
   search?: string;
@@ -34,6 +42,77 @@ export interface ListPurchasesQuery {
 
 @Injectable()
 export class PurchasesService {
+  public async listPurchases(
+    userContext: UserContext,
+    query: ListPurchasesQuery = {},
+    prismaClient = defaultPrisma
+  ): Promise<any> {
+    const organizationId = userContext.organizationId;
+    const page = query.page ? Number(query.page) : 1;
+    const limit = query.limit ? Number(query.limit) : 50;
+    const skip = (page - 1) * limit;
+
+    const where: any = { organizationId };
+    if (query.supplierId) {
+      where.supplierId = query.supplierId;
+    }
+    if (query.status) {
+      where.status = query.status;
+    }
+
+    const [items, totalCount] = await Promise.all([
+      prismaClient.purchase.findMany({
+        where,
+        include: {
+          supplier: true,
+          lines: {
+            include: { product: true },
+          },
+          receivings: {
+            include: { lines: true },
+          },
+        },
+        orderBy: { createdAt: "desc" },
+        skip,
+        take: limit,
+      }),
+      prismaClient.purchase.count({ where }),
+    ]);
+
+    return {
+      data: items,
+      meta: {
+        totalCount,
+        page,
+        limit,
+        totalPages: Math.ceil(totalCount / limit) || 1,
+      },
+    };
+  }
+
+  public async getPurchase(
+    userContext: UserContext,
+    id: string,
+    prismaClient = defaultPrisma
+  ): Promise<any> {
+    const organizationId = userContext.organizationId;
+    const purchase = await prismaClient.purchase.findUnique({
+      where: {
+        organizationId_id: { organizationId, id },
+      },
+      include: {
+        supplier: true,
+        lines: { include: { product: true } },
+        receivings: { include: { lines: true } },
+      },
+    });
+
+    if (!purchase) {
+      throw new NotFoundException("Commande d'achat introuvable.");
+    }
+    return purchase;
+  }
+
   public async createPurchase(
     userContext: UserContext,
     dto: CreatePurchaseDto,
@@ -42,88 +121,72 @@ export class PurchasesService {
     const organizationId = userContext.organizationId;
 
     if (!dto.supplierId) {
-      throw new BadRequestException("Un fournisseur doit être spécifié pour chaque commande d'achat.");
+      throw new BadRequestException("Un fournisseur est obligatoire pour passer une commande.");
     }
     if (!dto.lines || dto.lines.length === 0) {
-      throw new BadRequestException("Une commande d'achat doit contenir au moins une ligne.");
+      throw new BadRequestException("Une commande d'achat doit comporter au moins une ligne d'article.");
     }
 
     return prismaClient.$transaction(async (tx) => {
-      // 1. Lock Organization Row for Concurrency-Safe Reference Generation
-      await tx.$executeRaw`
-        UPDATE "Organization"
-        SET "updatedAt" = CURRENT_TIMESTAMP
-        WHERE "id" = ${organizationId}
-      `;
-
-      // 2. Verify Supplier
       const supplier = await tx.supplier.findUnique({
-        where: {
-          organizationId_id: {
-            organizationId,
-            id: dto.supplierId,
-          },
-        },
+        where: { organizationId_id: { organizationId, id: dto.supplierId } },
       });
+
       if (!supplier) {
-        throw new BadRequestException("Fournisseur introuvable.");
+        throw new NotFoundException("Fournisseur introuvable dans votre entreprise.");
       }
 
-      // 3. Fetch Products
-      const productIds = dto.lines.map((l) => l.productId);
-      const products = await tx.product.findMany({
-        where: {
-          organizationId,
-          id: { in: productIds },
-        },
-      });
-
-      const productMap = new Map(products.map((p) => [p.id, p]));
+      const purchaseCount = await tx.purchase.count({ where: { organizationId } });
+      const refNumber = (purchaseCount + 1).toString().padStart(4, "0");
+      const reference = `ACH-${new Date().getFullYear()}-${refNumber}`;
 
       let totalMinor = 0;
-      const purchaseLinesData = dto.lines.map((line) => {
-        const p = productMap.get(line.productId);
-        if (!p) {
-          throw new BadRequestException(`Produit avec ID ${line.productId} introuvable.`);
+      const linesData: any[] = [];
+
+      for (const line of dto.lines) {
+        if (line.quantity <= 0 || !Number.isInteger(line.quantity)) {
+          throw new BadRequestException("La quantité commandée doit être un entier positif.");
         }
-        if (line.quantity <= 0) {
-          throw new BadRequestException("La quantité commandée doit être supérieure à zéro.");
-        }
-        if (line.unitCostMinor < 0) {
-          throw new BadRequestException("Le coût unitaire ne peut pas être négatif.");
+        if (line.unitCostMinor < 0 || !Number.isInteger(line.unitCostMinor)) {
+          throw new BadRequestException("Le coût unitaire doit être un entier positif.");
         }
 
-        const lineTotalMinor = line.unitCostMinor * line.quantity;
-        totalMinor += lineTotalMinor;
+        const product = await tx.product.findUnique({
+          where: { organizationId_id: { organizationId, id: line.productId } },
+        });
 
-        return {
-          productId: p.id,
+        if (!product) {
+          throw new NotFoundException(`Produit introuvable (ID: ${line.productId}).`);
+        }
+
+        const lineTotal = line.quantity * line.unitCostMinor;
+        totalMinor += lineTotal;
+
+        linesData.push({
+          productId: product.id,
           orderedQuantity: line.quantity,
           receivedQuantity: 0,
           unitCostMinor: line.unitCostMinor,
-          lineTotalMinor,
-        };
-      });
+          lineTotalMinor: line.totalCostMinor || lineTotal,
+        });
 
-      const count = await tx.purchase.count({ where: { organizationId } });
-      const reference = `ACH-${new Date().getFullYear()}-${(count + 1).toString().padStart(4, "0")}`;
+      }
 
       const purchase = await tx.purchase.create({
         data: {
           organizationId,
           reference,
           supplierId: supplier.id,
-          orderDate: new Date(),
-          totalMinor,
           status: "ORDERED",
-          notes: dto.notes ? dto.notes.trim() : null,
+          totalMinor,
+          notes: dto.notes || null,
           lines: {
-            create: purchaseLinesData,
+            create: linesData,
           },
         },
         include: {
-          lines: true,
           supplier: true,
+          lines: true,
         },
       });
 
@@ -134,17 +197,7 @@ export class PurchasesService {
           action: "purchase.create",
           resourceType: "purchase",
           resourceId: purchase.id,
-          metadataJson: JSON.stringify({ reference, totalMinor, supplierName: supplier.name }),
-        },
-      });
-
-      await tx.outboxEvent.create({
-        data: {
-          organizationId,
-          eventType: "PurchaseCreated",
-          aggregateType: "Purchase",
-          aggregateId: purchase.id,
-          payloadJson: JSON.stringify({ purchaseId: purchase.id, reference }),
+          metadataJson: JSON.stringify({ reference, totalMinor, lineCount: linesData.length }),
         },
       });
 
@@ -153,7 +206,7 @@ export class PurchasesService {
   }
 
   /**
-   * JAA-S1-09: Goods Receiving Workflow with P0 Over-receiving & Concurrency Protection
+   * JAA-S1-09: Goods Receiving Workflow with Required Idempotency & P0 Over-receiving Protection
    */
   public async receivePurchase(
     userContext: UserContext,
@@ -162,13 +215,61 @@ export class PurchasesService {
     prismaClient = defaultPrisma
   ): Promise<any> {
     const organizationId = userContext.organizationId;
+    const operation = "purchases.receive";
+    const idempotencyKey = dto.idempotencyKey;
+
+    if (!idempotencyKey || typeof idempotencyKey !== "string" || !idempotencyKey.trim()) {
+      throw new BadRequestException("La clé d'idempotence (idempotencyKey) est obligatoire pour enregistrer une réception.");
+    }
 
     if (!dto.lines || dto.lines.length === 0) {
       throw new BadRequestException("Une réception doit contenir au moins une ligne d'article.");
     }
 
+    const requestHash = hashCanonicalPayload({ purchaseId, lines: dto.lines, notes: dto.notes });
+
     return prismaClient.$transaction(async (tx) => {
-      // 1. Lock Organization Row for Concurrency-Safe Reference Generation
+      // 1. Idempotency handling
+      const existingRecord = await tx.idempotencyRecord.findUnique({
+        where: {
+          organizationId_operation_idempotencyKey: {
+            organizationId,
+            operation,
+            idempotencyKey,
+          },
+        },
+      });
+
+      if (existingRecord) {
+        if (existingRecord.requestHash !== requestHash) {
+          throw new ConflictException("Conflit d'idempotence : La même clé a été soumise avec des données de réception différentes.");
+        }
+        if (existingRecord.status === "COMPLETED" && existingRecord.responseJson) {
+          return JSON.parse(existingRecord.responseJson);
+        }
+        if (existingRecord.status === "PROCESSING") {
+          throw new ConflictException("Réception idempotente en cours de traitement.");
+        }
+      }
+
+      try {
+        await tx.idempotencyRecord.create({
+          data: {
+            organizationId,
+            operation,
+            idempotencyKey,
+            requestHash,
+            status: "PROCESSING",
+          },
+        });
+      } catch (e: any) {
+        if (e.code === "P2002" || e?.message?.includes("Unique constraint")) {
+          throw new ConflictException("Réception idempotente en cours de traitement.");
+        }
+        throw e;
+      }
+
+      // 2. Lock Organization Row for Concurrency-Safe Reference Generation
       await tx.$executeRaw`
         UPDATE "Organization"
         SET "updatedAt" = CURRENT_TIMESTAMP
@@ -254,18 +355,17 @@ export class PurchasesService {
               productId: recLine.productId,
             },
           },
-          update: {
-            availableQuantity: { increment: recLine.quantityReceived },
-          },
           create: {
             organizationId,
             productId: recLine.productId,
             availableQuantity: recLine.quantityReceived,
-            reservedQuantity: 0,
+          },
+          update: {
+            availableQuantity: { increment: recLine.quantityReceived },
           },
         });
 
-        // 3. Record StockMovement
+        // 3. Create StockMovement (PURCHASE_IN)
         await tx.stockMovement.create({
           data: {
             organizationId,
@@ -282,33 +382,14 @@ export class PurchasesService {
         });
       }
 
-      // 4. Check if fully or partially received
-      const updatedPurchaseLines = await tx.purchaseLine.findMany({
-        where: { organizationId, purchaseId },
-      });
-
-      const isFullyReceived = updatedPurchaseLines.every((l) => l.receivedQuantity >= l.orderedQuantity);
-      const newStatus = isFullyReceived ? "RECEIVED" : "PARTIALLY_RECEIVED";
-
-      await tx.purchase.update({
-        where: {
-          organizationId_id: {
-            organizationId,
-            id: purchaseId,
-          },
-        },
-        data: { status: newStatus },
-      });
-
-      // 5. Create Receiving Log Record
+      // 4. Create Receiving record
       const receiving = await tx.receiving.create({
         data: {
           organizationId,
+          purchaseId: purchase.id,
           reference: receivingRef,
-          purchaseId,
-          receivedAt: new Date(),
+          notes: dto.notes || null,
           createdById: userContext.actorId,
-          notes: dto.notes ? dto.notes.trim() : null,
           lines: {
             create: receivingLinesData,
           },
@@ -318,6 +399,20 @@ export class PurchasesService {
         },
       });
 
+      // 5. Update Purchase status
+      const updatedLines = await tx.purchaseLine.findMany({
+        where: { organizationId, purchaseId: purchase.id },
+      });
+
+      const allCompleted = updatedLines.every((l) => l.receivedQuantity >= l.orderedQuantity);
+      const newStatus = allCompleted ? "RECEIVED" : "PARTIALLY_RECEIVED";
+
+      await tx.purchase.update({
+        where: { organizationId_id: { organizationId, id: purchase.id } },
+        data: { status: newStatus },
+      });
+
+      // 6. Create AuditEvent
       await tx.auditEvent.create({
         data: {
           organizationId,
@@ -325,84 +420,53 @@ export class PurchasesService {
           action: "purchase.receive",
           resourceType: "receiving",
           resourceId: receiving.id,
-          metadataJson: JSON.stringify({ purchaseId, receivingRef, newStatus }),
+          metadataJson: JSON.stringify({
+            purchaseId: purchase.id,
+            receivingReference: receivingRef,
+            status: newStatus,
+          }),
         },
       });
 
-      return receiving;
-    });
-  }
-
-  public async getPurchase(
-    userContext: UserContext,
-    purchaseId: string,
-    prismaClient = defaultPrisma
-  ): Promise<any> {
-    const organizationId = userContext.organizationId;
-    const purchase = await prismaClient.purchase.findUnique({
-      where: {
-        organizationId_id: {
+      // 7. Create OutboxEvent GoodsReceived
+      await tx.outboxEvent.create({
+        data: {
           organizationId,
-          id: purchaseId,
+          eventType: "GoodsReceived",
+          aggregateType: "receiving",
+          aggregateId: receiving.id,
+          payloadJson: JSON.stringify({
+            receivingId: receiving.id,
+            purchaseId: purchase.id,
+            reference: receivingRef,
+            lines: dto.lines,
+          }),
+          status: "PENDING",
         },
-      },
-      include: {
-        lines: true,
-        supplier: true,
-        receivings: {
-          include: { lines: true },
+      });
+
+      // 8. Mark Idempotency Record COMPLETED
+      const responsePayload = {
+        ...receiving,
+        status: newStatus,
+        purchaseStatus: newStatus,
+      };
+
+      await tx.idempotencyRecord.update({
+        where: {
+          organizationId_operation_idempotencyKey: {
+            organizationId,
+            operation,
+            idempotencyKey,
+          },
         },
-      },
+        data: {
+          status: "COMPLETED",
+          responseJson: JSON.stringify(responsePayload),
+        },
+      });
+
+      return responsePayload;
     });
-
-    if (!purchase) {
-      throw new NotFoundException("Commande d'achat introuvable.");
-    }
-
-    return purchase;
-  }
-
-  public async listPurchases(
-    userContext: UserContext,
-    query: ListPurchasesQuery = {},
-    prismaClient = defaultPrisma
-  ): Promise<{ data: any[]; total: number; page: number; limit: number }> {
-    const organizationId = userContext.organizationId;
-    const page = Math.max(1, query.page || 1);
-    const limit = Math.max(1, Math.min(100, query.limit || 20));
-    const skip = (page - 1) * limit;
-
-    const where: any = { organizationId };
-
-    if (query.supplierId) {
-      where.supplierId = query.supplierId;
-    }
-    if (query.status) {
-      where.status = query.status;
-    }
-    if (query.search && query.search.trim().length > 0) {
-      where.reference = { contains: query.search.trim(), mode: "insensitive" };
-    }
-
-    const [purchases, total] = await Promise.all([
-      prismaClient.purchase.findMany({
-        where,
-        include: {
-          supplier: true,
-          lines: true,
-        },
-        orderBy: { createdAt: "desc" },
-        skip,
-        take: limit,
-      }),
-      prismaClient.purchase.count({ where }),
-    ]);
-
-    return {
-      data: purchases,
-      total,
-      page,
-      limit,
-    };
   }
 }

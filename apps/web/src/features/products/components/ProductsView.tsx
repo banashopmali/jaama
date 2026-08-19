@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Package, Plus, Search, Filter, Tag, Archive } from "lucide-react";
 import { Button, Card, Badge, Modal } from "@jaama/ui";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { formatMoney } from "../../sales/sales.utils";
 
 export interface UIProduct {
@@ -20,55 +21,12 @@ export interface UIProduct {
   };
 }
 
-export const initialMockProducts: UIProduct[] = [
-  {
-    id: "prod-001",
-    sku: "COC-500",
-    name: "Coca-Cola 50cl",
-    category: "Boissons",
-    unitPriceMinor: 500,
-    costMinor: 350,
-    status: "active",
-    lowStockThreshold: 10,
-    stock: { available: 45, reserved: 0 },
-  },
-  {
-    id: "prod-002",
-    sku: "AMP-12W",
-    name: "Ampoule LED 12W",
-    category: "Équipement",
-    unitPriceMinor: 1000,
-    costMinor: 700,
-    status: "active",
-    lowStockThreshold: 5,
-    stock: { available: 12, reserved: 0 },
-  },
-  {
-    id: "prod-003",
-    sku: "NID-300",
-    name: "Lait Nido 400g",
-    category: "Alimentation",
-    unitPriceMinor: 5000,
-    costMinor: 4200,
-    status: "active",
-    lowStockThreshold: 5,
-    stock: { available: 3, reserved: 0 },
-  },
-  {
-    id: "prod-004",
-    sku: "RIZ-400",
-    name: "Riz Parfumé 5kg",
-    category: "Alimentation",
-    unitPriceMinor: 6500,
-    costMinor: 5800,
-    status: "active",
-    lowStockThreshold: 10,
-    stock: { available: 20, reserved: 0 },
-  },
-];
-
 export const ProductsView: React.FC = () => {
-  const [products, setProducts] = useState<UIProduct[]>(initialMockProducts);
+  const { apiFetch } = useWorkspace();
+  const [products, setProducts] = useState<UIProduct[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedCategory, setSelectedCategory] = useState("Tous");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
@@ -80,8 +38,44 @@ export const ProductsView: React.FC = () => {
   const [newCategory, setNewCategory] = useState("Alimentation");
   const [newPrice, setNewPrice] = useState("");
   const [newStock, setNewStock] = useState("10");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
 
   const categories = ["Tous", "Alimentation", "Boissons", "Équipement", "Hygiène"];
+
+  const loadProducts = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiFetch("/api/v1/products");
+      const list = res.data || [];
+      const mapped: UIProduct[] = list.map((p: any) => ({
+        id: p.id,
+        sku: p.sku,
+        name: p.name,
+        category: p.category,
+        unitPriceMinor: p.unitPriceMinor,
+        costMinor: p.costMinor,
+        status: p.status || "active",
+        lowStockThreshold: p.lowStockThreshold,
+        stock: {
+          available: p.inventoryBalance ? p.inventoryBalance.availableQuantity : 0,
+          reserved: 0,
+        },
+      }));
+      setProducts(mapped);
+    } catch (err: any) {
+      setError(err?.message || "Impossible de charger le catalogue produits.");
+      setProducts([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadProducts();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredProducts = products.filter((p) => {
     const matchesSearch =
@@ -91,34 +85,54 @@ export const ProductsView: React.FC = () => {
     return matchesSearch && matchesCategory && p.status !== "archived";
   });
 
-  const handleCreateProduct = (e: React.FormEvent) => {
+  const handleCreateProduct = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!newName.trim() || !newSku.trim() || !newPrice.trim()) return;
 
-    const created: UIProduct = {
-      id: `prod-${Date.now()}`,
-      sku: newSku.trim().toUpperCase(),
-      name: newName.trim(),
-      category: newCategory,
-      unitPriceMinor: parseInt(newPrice, 10) || 0,
-      status: "active",
-      lowStockThreshold: 5,
-      stock: {
-        available: parseInt(newStock, 10) || 0,
-        reserved: 0,
-      },
-    };
+    const priceMinor = parseInt(newPrice, 10);
+    const stockQty = parseInt(newStock, 10);
+    if (isNaN(priceMinor) || priceMinor <= 0) {
+      setFormError("Le prix unitaire doit être un nombre valide supérieur à zéro.");
+      return;
+    }
 
-    setProducts([created, ...products]);
-    setIsCreateModalOpen(false);
-    setNewSku("");
-    setNewName("");
-    setNewPrice("");
+    setSubmitting(true);
+    try {
+      await apiFetch("/api/v1/products", {
+        method: "POST",
+        body: JSON.stringify({
+          sku: newSku.trim().toUpperCase(),
+          name: newName.trim(),
+          category: newCategory,
+          unitPriceMinor: priceMinor,
+          initialStock: isNaN(stockQty) ? 0 : stockQty,
+        }),
+      });
+
+      setIsCreateModalOpen(false);
+      setNewSku("");
+      setNewName("");
+      setNewPrice("");
+      setNewStock("10");
+      loadProducts();
+    } catch (err: any) {
+      setFormError(err?.message || "Échec de la création du produit.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleArchiveProduct = (id: string) => {
-    setProducts(products.map((p) => (p.id === id ? { ...p, status: "archived" } : p)));
-    setSelectedProduct(null);
+  const handleArchiveProduct = async (id: string) => {
+    try {
+      await apiFetch(`/api/v1/products/${id}`, {
+        method: "DELETE",
+      });
+      setSelectedProduct(null);
+      loadProducts();
+    } catch (err: any) {
+      alert(err?.message || "Échec de l'archivage du produit.");
+    }
   };
 
   return (
@@ -177,7 +191,15 @@ export const ProductsView: React.FC = () => {
 
       {/* Product List / Table */}
       <Card variant="default" className="overflow-hidden">
-        {filteredProducts.length === 0 ? (
+        {loading ? (
+          <div className="p-12 text-center text-sm font-medium text-content-secondary">
+            Chargement du catalogue serveur...
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center text-sm text-state-danger-fg">
+            {error}
+          </div>
+        ) : filteredProducts.length === 0 ? (
           <div className="p-12 text-center space-y-3">
             <Package className="w-12 h-12 text-content-tertiary mx-auto opacity-40" />
             <p className="text-sm font-semibold text-content-secondary">
@@ -277,6 +299,10 @@ export const ProductsView: React.FC = () => {
         title="Créer un nouveau produit"
       >
         <form onSubmit={handleCreateProduct} className="space-y-4 pt-2">
+          {formError && (
+            <div className="p-3 text-xs text-red-600 bg-red-50 rounded-lg">{formError}</div>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-content-primary mb-1">
               SKU Produit *
@@ -359,8 +385,8 @@ export const ProductsView: React.FC = () => {
             >
               Annuler
             </Button>
-            <Button variant="primary" type="submit">
-              Enregistrer le produit
+            <Button variant="primary" type="submit" disabled={submitting}>
+              {submitting ? "Enregistrement..." : "Enregistrer le produit"}
             </Button>
           </div>
         </form>

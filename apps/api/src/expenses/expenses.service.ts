@@ -2,16 +2,16 @@ import { Injectable, BadRequestException, NotFoundException } from "@nestjs/comm
 import { prisma as defaultPrisma } from "@jaama/database";
 import { UserContext } from "@jaama/types";
 
-export interface CreateExpenseDto {
-  category: string;
+export class CreateExpenseDto {
+  category!: string;
   description?: string;
-  amountMinor: number;
+  amountMinor!: number;
   occurredAt?: string;
   notes?: string;
   paymentMethod?: string;
 }
 
-export interface ListExpensesQuery {
+export class ListExpensesQuery {
   category?: string;
   startDate?: string;
   endDate?: string;

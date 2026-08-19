@@ -15,7 +15,7 @@ import {
 import { validateCreateSaleCommand } from "@jaama/validation";
 import { hashCanonicalPayload } from "../common/canonical-hash";
 
-export interface ListSalesQuery {
+export class ListSalesQuery {
   search?: string;
   startDate?: string;
   endDate?: string;

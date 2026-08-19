@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Plus, Search, Phone, Mail, Archive } from "lucide-react";
 import { Button, Card, Badge, Modal } from "@jaama/ui";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { formatMoney } from "../../sales/sales.utils";
 
 export interface UICustomer {
@@ -21,56 +22,12 @@ export interface UICustomer {
   };
 }
 
-export const mockCustomers: UICustomer[] = [
-  {
-    id: "cust-001",
-    name: "Bakary Diarra",
-    phone: "+22375554433",
-    email: "bakary.diarra@gmail.com",
-    address: "Hamdallaye ACI 2000, Bamako",
-    status: "active",
-    type: "registered",
-    summary: {
-      salesCount: 14,
-      salesTotalMinor: 145000,
-      paidMinor: 125000,
-      outstandingMinor: 20000,
-    },
-  },
-  {
-    id: "cust-002",
-    name: "Oumar Coulibaly",
-    phone: "+22370001122",
-    email: "oumar@coulibaly.ml",
-    address: "Badalabougou, Bamako",
-    status: "active",
-    type: "registered",
-    summary: {
-      salesCount: 8,
-      salesTotalMinor: 85000,
-      paidMinor: 85000,
-      outstandingMinor: 0,
-    },
-  },
-  {
-    id: "cust-003",
-    name: "Client Comptoir",
-    phone: null,
-    email: null,
-    address: null,
-    status: "active",
-    type: "walk_in",
-    summary: {
-      salesCount: 120,
-      salesTotalMinor: 650000,
-      paidMinor: 650000,
-      outstandingMinor: 0,
-    },
-  },
-];
-
 export const CustomersView: React.FC = () => {
-  const [customers, setCustomers] = useState<UICustomer[]>(mockCustomers);
+  const { apiFetch } = useWorkspace();
+  const [customers, setCustomers] = useState<UICustomer[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedCustomer, setSelectedCustomer] = useState<UICustomer | null>(null);
@@ -80,6 +37,43 @@ export const CustomersView: React.FC = () => {
   const [newPhone, setNewPhone] = useState("");
   const [newEmail, setNewEmail] = useState("");
   const [newAddress, setNewAddress] = useState("");
+  const [submitting, setSubmitting] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
+
+  const loadCustomers = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiFetch("/api/v1/customers");
+      const list = res.data || [];
+      const mapped: UICustomer[] = list.map((c: any) => ({
+        id: c.id,
+        name: c.name,
+        phone: c.phone,
+        email: c.email,
+        address: c.address,
+        status: c.status || "active",
+        type: c.type || "registered",
+        summary: {
+          salesCount: c.summary?.salesCount || c.salesCount || 0,
+          salesTotalMinor: c.summary?.salesTotalMinor || c.salesTotalMinor || 0,
+          paidMinor: c.summary?.paidMinor || c.paidMinor || 0,
+          outstandingMinor: c.summary?.outstandingMinor || c.outstandingMinor || 0,
+        },
+      }));
+      setCustomers(mapped);
+    } catch (err: any) {
+      setError(err?.message || "Impossible de charger les clients.");
+      setCustomers([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadCustomers();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredCustomers = customers.filter(
     (c) =>
@@ -89,37 +83,46 @@ export const CustomersView: React.FC = () => {
         (c.email && c.email.toLowerCase().includes(searchQuery.toLowerCase())))
   );
 
-  const handleCreateCustomer = (e: React.FormEvent) => {
+  const handleCreateCustomer = async (e: React.FormEvent) => {
     e.preventDefault();
+    setFormError(null);
     if (!newName.trim()) return;
 
-    const created: UICustomer = {
-      id: `cust-${Date.now()}`,
-      name: newName.trim(),
-      phone: newPhone.trim() || null,
-      email: newEmail.trim() || null,
-      address: newAddress.trim() || null,
-      status: "active",
-      type: "registered",
-      summary: {
-        salesCount: 0,
-        salesTotalMinor: 0,
-        paidMinor: 0,
-        outstandingMinor: 0,
-      },
-    };
+    setSubmitting(true);
+    try {
+      await apiFetch("/api/v1/customers", {
+        method: "POST",
+        body: JSON.stringify({
+          name: newName.trim(),
+          phone: newPhone.trim() || undefined,
+          email: newEmail.trim() || undefined,
+          address: newAddress.trim() || undefined,
+        }),
+      });
 
-    setCustomers([created, ...customers]);
-    setIsCreateModalOpen(false);
-    setNewName("");
-    setNewPhone("");
-    setNewEmail("");
-    setNewAddress("");
+      setIsCreateModalOpen(false);
+      setNewName("");
+      setNewPhone("");
+      setNewEmail("");
+      setNewAddress("");
+      loadCustomers();
+    } catch (err: any) {
+      setFormError(err?.message || "Échec de la création du client.");
+    } finally {
+      setSubmitting(false);
+    }
   };
 
-  const handleArchiveCustomer = (id: string) => {
-    setCustomers(customers.map((c) => (c.id === id ? { ...c, status: "archived" } : c)));
-    setSelectedCustomer(null);
+  const handleArchiveCustomer = async (id: string) => {
+    try {
+      await apiFetch(`/api/v1/customers/${id}`, {
+        method: "DELETE",
+      });
+      setSelectedCustomer(null);
+      loadCustomers();
+    } catch (err: any) {
+      alert(err?.message || "Échec de l'archivage du client.");
+    }
   };
 
   return (
@@ -182,88 +185,96 @@ export const CustomersView: React.FC = () => {
 
       {/* Customers Table */}
       <Card variant="default" className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm border-collapse">
-            <thead>
-              <tr className="border-b border-border-subtle bg-surface-subtle text-xs font-semibold text-content-secondary">
-                <th className="py-3 px-4">Client</th>
-                <th className="py-3 px-4">Type</th>
-                <th className="py-3 px-4">Coordonnées</th>
-                <th className="py-3 px-4 text-center">Ventes</th>
-                <th className="py-3 px-4 text-right">Total Achats</th>
-                <th className="py-3 px-4 text-right">Solde à payer</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-subtle">
-              {filteredCustomers.map((customer) => {
-                const hasReceivable = customer.summary.outstandingMinor > 0;
-                return (
-                  <tr
-                    key={customer.id}
-                    className="hover:bg-surface-hover transition-colors cursor-pointer"
-                    onClick={() => setSelectedCustomer(customer)}
-                  >
-                    <td className="py-3.5 px-4 font-semibold text-content-primary">
-                      {customer.name}
-                    </td>
-                    <td className="py-3.5 px-4">
-                      {customer.type === "walk_in" ? (
-                        <Badge variant="neutral" size="sm">Client Comptoir</Badge>
-                      ) : (
-                        <Badge variant="brand" size="sm">Enregistré</Badge>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-xs text-content-secondary space-y-0.5">
-                      {customer.phone && (
-                        <div className="flex items-center gap-1">
-                          <Phone className="w-3 h-3 text-content-tertiary" />
-                          <span>{customer.phone}</span>
-                        </div>
-                      )}
-                      {customer.email && (
-                        <div className="flex items-center gap-1">
-                          <Mail className="w-3 h-3 text-content-tertiary" />
-                          <span>{customer.email}</span>
-                        </div>
-                      )}
-                      {!customer.phone && !customer.email && (
-                        <span className="text-content-tertiary font-italic">—</span>
-                      )}
-                    </td>
-                    <td className="py-3.5 px-4 text-center font-bold text-content-primary">
-                      {customer.summary.salesCount}
-                    </td>
-                    <td className="py-3.5 px-4 text-right font-bold text-content-primary">
-                      {formatMoney(customer.summary.salesTotalMinor)}
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <span
-                        className={`font-extrabold ${
-                          hasReceivable ? "text-state-warning-fg" : "text-content-secondary"
-                        }`}
-                      >
-                        {formatMoney(customer.summary.outstandingMinor)}
-                      </span>
-                    </td>
-                    <td className="py-3.5 px-4 text-right">
-                      <Button
-                        variant="secondary"
-                        size="sm"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          setSelectedCustomer(customer);
-                        }}
-                      >
-                        Fiche Client
-                      </Button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
+        {loading ? (
+          <div className="p-12 text-center text-sm text-content-secondary">
+            Chargement de la liste des clients...
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center text-sm text-state-danger-fg">{error}</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-border-subtle bg-surface-subtle text-xs font-semibold text-content-secondary">
+                  <th className="py-3 px-4">Client</th>
+                  <th className="py-3 px-4">Type</th>
+                  <th className="py-3 px-4">Coordonnées</th>
+                  <th className="py-3 px-4 text-center">Ventes</th>
+                  <th className="py-3 px-4 text-right">Total Achats</th>
+                  <th className="py-3 px-4 text-right">Solde à payer</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-border-subtle">
+                {filteredCustomers.map((customer) => {
+                  const hasReceivable = customer.summary.outstandingMinor > 0;
+                  return (
+                    <tr
+                      key={customer.id}
+                      className="hover:bg-surface-hover transition-colors cursor-pointer"
+                      onClick={() => setSelectedCustomer(customer)}
+                    >
+                      <td className="py-3.5 px-4 font-semibold text-content-primary">
+                        {customer.name}
+                      </td>
+                      <td className="py-3.5 px-4">
+                        {customer.type === "walk_in" ? (
+                          <Badge variant="neutral" size="sm">Client Comptoir</Badge>
+                        ) : (
+                          <Badge variant="brand" size="sm">Enregistré</Badge>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-xs text-content-secondary space-y-0.5">
+                        {customer.phone && (
+                          <div className="flex items-center gap-1">
+                            <Phone className="w-3 h-3 text-content-tertiary" />
+                            <span>{customer.phone}</span>
+                          </div>
+                        )}
+                        {customer.email && (
+                          <div className="flex items-center gap-1">
+                            <Mail className="w-3 h-3 text-content-tertiary" />
+                            <span>{customer.email}</span>
+                          </div>
+                        )}
+                        {!customer.phone && !customer.email && (
+                          <span className="text-content-tertiary font-italic">—</span>
+                        )}
+                      </td>
+                      <td className="py-3.5 px-4 text-center font-bold text-content-primary">
+                        {customer.summary.salesCount}
+                      </td>
+                      <td className="py-3.5 px-4 text-right font-bold text-content-primary">
+                        {formatMoney(customer.summary.salesTotalMinor)}
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <span
+                          className={`font-extrabold ${
+                            hasReceivable ? "text-state-warning-fg" : "text-content-secondary"
+                          }`}
+                        >
+                          {formatMoney(customer.summary.outstandingMinor)}
+                        </span>
+                      </td>
+                      <td className="py-3.5 px-4 text-right">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setSelectedCustomer(customer);
+                          }}
+                        >
+                          Fiche Client
+                        </Button>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
 
       {/* Create Customer Modal */}
@@ -273,6 +284,10 @@ export const CustomersView: React.FC = () => {
         title="Ajouter un nouveau client"
       >
         <form onSubmit={handleCreateCustomer} className="space-y-4 pt-2">
+          {formError && (
+            <div className="p-3 text-xs text-red-600 bg-red-50 rounded-lg">{formError}</div>
+          )}
+
           <div>
             <label className="block text-xs font-bold text-content-primary mb-1">
               Nom complet du client *
@@ -336,8 +351,8 @@ export const CustomersView: React.FC = () => {
             >
               Annuler
             </Button>
-            <Button variant="primary" type="submit">
-              Créer le client
+            <Button variant="primary" type="submit" disabled={submitting}>
+              {submitting ? "Création..." : "Créer le client"}
             </Button>
           </div>
         </form>

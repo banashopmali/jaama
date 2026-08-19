@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { ArrowUpRight, ArrowDownLeft, Sliders, Search } from "lucide-react";
 import { Button, Card, Badge, Modal, Alert } from "@jaama/ui";
+import { useWorkspace } from "@/context/WorkspaceContext";
 
 export interface UIInventoryItem {
   productId: string;
@@ -26,75 +27,13 @@ export interface UIStockMovement {
   recordedAt: string;
 }
 
-export const mockInventoryItems: UIInventoryItem[] = [
-  {
-    productId: "prod-001",
-    sku: "COC-500",
-    name: "Coca-Cola 50cl",
-    category: "Boissons",
-    availableQuantity: 45,
-    reservedQuantity: 0,
-    lowStockThreshold: 10,
-    stockStatus: "normal",
-  },
-  {
-    productId: "prod-002",
-    sku: "AMP-12W",
-    name: "Ampoule LED 12W",
-    category: "Équipement",
-    availableQuantity: 12,
-    reservedQuantity: 0,
-    lowStockThreshold: 5,
-    stockStatus: "normal",
-  },
-  {
-    productId: "prod-003",
-    sku: "NID-300",
-    name: "Lait Nido 400g",
-    category: "Alimentation",
-    availableQuantity: 3,
-    reservedQuantity: 0,
-    lowStockThreshold: 5,
-    stockStatus: "low",
-  },
-  {
-    productId: "prod-004",
-    sku: "RIZ-400",
-    name: "Riz Parfumé 5kg",
-    category: "Alimentation",
-    availableQuantity: 20,
-    reservedQuantity: 0,
-    lowStockThreshold: 10,
-    stockStatus: "normal",
-  },
-];
-
-export const mockStockMovements: UIStockMovement[] = [
-  {
-    id: "mov-001",
-    productId: "prod-001",
-    productName: "Coca-Cola 50cl",
-    sku: "COC-500",
-    movementType: "SALE_OUT",
-    quantityDelta: -2,
-    reference: "VTE-0025",
-    recordedAt: new Date().toISOString(),
-  },
-  {
-    id: "mov-002",
-    productId: "prod-004",
-    productName: "Riz Parfumé 5kg",
-    sku: "RIZ-400",
-    movementType: "PURCHASE_IN",
-    quantityDelta: 20,
-    reference: "ACHAT-0012",
-    recordedAt: new Date(Date.now() - 3600000).toISOString(),
-  },
-];
-
 export const InventoryView: React.FC = () => {
-  const [items, setItems] = useState<UIInventoryItem[]>(mockInventoryItems);
-  const [movements, setMovements] = useState<UIStockMovement[]>(mockStockMovements);
+  const { apiFetch } = useWorkspace();
+  const [items, setItems] = useState<UIInventoryItem[]>([]);
+  const [movements, setMovements] = useState<UIStockMovement[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedItem, setSelectedItem] = useState<UIInventoryItem | null>(null);
   const [isAdjustModalOpen, setIsAdjustModalOpen] = useState(false);
@@ -103,7 +42,57 @@ export const InventoryView: React.FC = () => {
   const [adjustType, setAdjustType] = useState<"ADJUSTMENT_IN" | "ADJUSTMENT_OUT">("ADJUSTMENT_IN");
   const [adjustQty, setAdjustQty] = useState("");
   const [adjustReason, setAdjustReason] = useState("");
+  const [submitting, setSubmitting] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+
+  const loadInventory = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const [invRes, movRes] = await Promise.all([
+        apiFetch("/api/v1/inventory"),
+        apiFetch("/api/v1/inventory/movements"),
+      ]);
+
+      const rawItems = invRes.data || [];
+      const mappedItems: UIInventoryItem[] = rawItems.map((i: any) => ({
+        productId: i.productId || i.product?.id,
+        sku: i.sku || i.product?.sku,
+        name: i.name || i.product?.name,
+        category: i.category || i.product?.category || "Général",
+        availableQuantity: i.availableQuantity ?? 0,
+        reservedQuantity: i.reservedQuantity ?? 0,
+        lowStockThreshold: i.lowStockThreshold ?? i.product?.lowStockThreshold ?? 5,
+        stockStatus: i.stockStatus || (i.availableQuantity <= 0 ? "out_of_stock" : i.availableQuantity <= 5 ? "low" : "normal"),
+      }));
+
+      const rawMovs = movRes.data || movRes || [];
+      const mappedMovs: UIStockMovement[] = rawMovs.map((m: any) => ({
+        id: m.id,
+        productId: m.productId,
+        productName: m.product?.name || m.productNameSnapshot || "Produit",
+        sku: m.product?.sku || m.skuSnapshot || "SKU",
+        movementType: m.movementType,
+        quantityDelta: m.quantityDelta,
+        reference: m.reference || "Ajustement",
+        recordedAt: m.createdAt || m.recordedAt || new Date().toISOString(),
+      }));
+
+      setItems(mappedItems);
+      setMovements(mappedMovs);
+    } catch (err: any) {
+      setError(err?.message || "Impossible de charger les stocks depuis le serveur.");
+      setItems([]);
+      setMovements([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadInventory();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredItems = items.filter(
     (item) =>
@@ -111,7 +100,7 @@ export const InventoryView: React.FC = () => {
       item.sku.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleAdjustSubmit = (e: React.FormEvent) => {
+  const handleAdjustSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!selectedItem) return;
     setErrorMsg(null);
@@ -130,38 +119,28 @@ export const InventoryView: React.FC = () => {
       return;
     }
 
-    let newStatus: "normal" | "low" | "out_of_stock" = "normal";
-    if (newAvailable <= 0) {
-      newStatus = "out_of_stock";
-    } else if (newAvailable <= selectedItem.lowStockThreshold) {
-      newStatus = "low";
+    setSubmitting(true);
+    try {
+      await apiFetch("/api/v1/inventory/adjust", {
+        method: "POST",
+        body: JSON.stringify({
+          productId: selectedItem.productId,
+          movementType: adjustType,
+          quantityDelta: qty,
+          reference: adjustReason.trim() || "AJUSTEMENT-MANUEL",
+        }),
+      });
+
+      setIsAdjustModalOpen(false);
+      setSelectedItem(null);
+      setAdjustQty("");
+      setAdjustReason("");
+      loadInventory();
+    } catch (err: any) {
+      setErrorMsg(err?.message || "Échec de l'ajustement du stock.");
+    } finally {
+      setSubmitting(false);
     }
-
-    // Update state
-    setItems(
-      items.map((item) =>
-        item.productId === selectedItem.productId
-          ? { ...item, availableQuantity: newAvailable, stockStatus: newStatus }
-          : item
-      )
-    );
-
-    const newMov: UIStockMovement = {
-      id: `mov-${Date.now()}`,
-      productId: selectedItem.productId,
-      productName: selectedItem.name,
-      sku: selectedItem.sku,
-      movementType: adjustType,
-      quantityDelta: delta,
-      reference: adjustReason.trim() || `AJUSTEMENT-MANUEL`,
-      recordedAt: new Date().toISOString(),
-    };
-
-    setMovements([newMov, ...movements]);
-    setIsAdjustModalOpen(false);
-    setSelectedItem(null);
-    setAdjustQty("");
-    setAdjustReason("");
   };
 
   return (
@@ -214,62 +193,70 @@ export const InventoryView: React.FC = () => {
 
       {/* Inventory Table */}
       <Card variant="default" className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm border-collapse">
-            <thead>
-              <tr className="border-b border-border-subtle bg-surface-subtle text-xs font-semibold text-content-secondary">
-                <th className="py-3 px-4">SKU</th>
-                <th className="py-3 px-4">Produit</th>
-                <th className="py-3 px-4">Catégorie</th>
-                <th className="py-3 px-4 text-center">Quantité disponible</th>
-                <th className="py-3 px-4 text-center">Seuil alerte</th>
-                <th className="py-3 px-4 text-center">Statut stock</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-subtle">
-              {filteredItems.map((item) => (
-                <tr key={item.productId} className="hover:bg-surface-hover transition-colors">
-                  <td className="py-3.5 px-4 font-mono text-xs font-bold text-content-brand">
-                    {item.sku}
-                  </td>
-                  <td className="py-3.5 px-4 font-semibold text-content-primary">
-                    {item.name}
-                  </td>
-                  <td className="py-3.5 px-4 text-content-secondary">{item.category}</td>
-                  <td className="py-3.5 px-4 text-center font-extrabold text-content-primary">
-                    {item.availableQuantity}
-                  </td>
-                  <td className="py-3.5 px-4 text-center text-content-tertiary text-xs">
-                    {item.lowStockThreshold}
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    {item.stockStatus === "out_of_stock" ? (
-                      <Badge variant="danger">Rupture</Badge>
-                    ) : item.stockStatus === "low" ? (
-                      <Badge variant="warning">Faible</Badge>
-                    ) : (
-                      <Badge variant="success">Normal</Badge>
-                    )}
-                  </td>
-                  <td className="py-3.5 px-4 text-right">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={() => {
-                        setSelectedItem(item);
-                        setIsAdjustModalOpen(true);
-                      }}
-                      leftIcon={<Sliders className="w-3.5 h-3.5" />}
-                    >
-                      Ajuster stock
-                    </Button>
-                  </td>
+        {loading ? (
+          <div className="p-12 text-center text-sm text-content-secondary">
+            Chargement des données de stock...
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center text-sm text-state-danger-fg">{error}</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-border-subtle bg-surface-subtle text-xs font-semibold text-content-secondary">
+                  <th className="py-3 px-4">SKU</th>
+                  <th className="py-3 px-4">Produit</th>
+                  <th className="py-3 px-4">Catégorie</th>
+                  <th className="py-3 px-4 text-center">Quantité disponible</th>
+                  <th className="py-3 px-4 text-center">Seuil alerte</th>
+                  <th className="py-3 px-4 text-center">Statut stock</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-border-subtle">
+                {filteredItems.map((item) => (
+                  <tr key={item.productId} className="hover:bg-surface-hover transition-colors">
+                    <td className="py-3.5 px-4 font-mono text-xs font-bold text-content-brand">
+                      {item.sku}
+                    </td>
+                    <td className="py-3.5 px-4 font-semibold text-content-primary">
+                      {item.name}
+                    </td>
+                    <td className="py-3.5 px-4 text-content-secondary">{item.category}</td>
+                    <td className="py-3.5 px-4 text-center font-extrabold text-content-primary">
+                      {item.availableQuantity}
+                    </td>
+                    <td className="py-3.5 px-4 text-center text-content-tertiary text-xs">
+                      {item.lowStockThreshold}
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      {item.stockStatus === "out_of_stock" ? (
+                        <Badge variant="danger">Rupture</Badge>
+                      ) : item.stockStatus === "low" ? (
+                        <Badge variant="warning">Faible</Badge>
+                      ) : (
+                        <Badge variant="success">Normal</Badge>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={() => {
+                          setSelectedItem(item);
+                          setIsAdjustModalOpen(true);
+                        }}
+                        leftIcon={<Sliders className="w-3.5 h-3.5" />}
+                      >
+                        Ajuster stock
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
 
       {/* Stock Movements Log */}
@@ -405,8 +392,8 @@ export const InventoryView: React.FC = () => {
               >
                 Annuler
               </Button>
-              <Button variant="primary" type="submit">
-                Confirmer l&apos;ajustement
+              <Button variant="primary" type="submit" disabled={submitting}>
+                {submitting ? "Validation..." : "Confirmer l'ajustement"}
               </Button>
             </div>
           </form>

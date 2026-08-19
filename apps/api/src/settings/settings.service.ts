@@ -2,7 +2,7 @@ import { Injectable, NotFoundException } from "@nestjs/common";
 import { prisma as defaultPrisma } from "@jaama/database";
 import { UserContext } from "@jaama/types";
 
-export interface UpdateSettingsDto {
+export class UpdateSettingsDto {
   name?: string;
   phone?: string;
   email?: string;

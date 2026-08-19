@@ -81,6 +81,7 @@ describe("JAA-S1-20 — JAAMA Sprint 1 Core Business Operating System Final Cert
     // 3. Receive Purchase Goods (PURCHASE_IN stock increment)
     await purchasesService.receivePurchase(certUserContext, purchase.id, {
       lines: [{ productId: product.id, quantityReceived: 5 }],
+      idempotencyKey: "cert-receive-key-001",
     });
 
     // Verify stock balance = 5

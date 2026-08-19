@@ -118,6 +118,7 @@ describe("JAA-S1-07..09 — Expenses, Suppliers & Purchasing Core Integration Te
 
     // Receive Goods
     const receiving = await purchasesService.receivePurchase(adminContextOrgA, purchase.id, {
+      idempotencyKey: "test-rec-key-001",
       lines: [{ productId: product.id, quantityReceived: 10 }],
     });
 

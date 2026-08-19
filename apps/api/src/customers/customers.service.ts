@@ -2,8 +2,8 @@ import { Injectable, BadRequestException, NotFoundException } from "@nestjs/comm
 import { prisma as defaultPrisma } from "@jaama/database";
 import { Customer, UserContext } from "@jaama/types";
 
-export interface CreateCustomerDto {
-  name: string;
+export class CreateCustomerDto {
+  name!: string;
   phone?: string;
   email?: string;
   address?: string;
@@ -11,7 +11,7 @@ export interface CreateCustomerDto {
   type?: "walk_in" | "registered";
 }
 
-export interface UpdateCustomerDto {
+export class UpdateCustomerDto {
   name?: string;
   phone?: string;
   email?: string;
@@ -21,7 +21,7 @@ export interface UpdateCustomerDto {
   type?: "walk_in" | "registered";
 }
 
-export interface ListCustomersQuery {
+export class ListCustomersQuery {
   search?: string;
   status?: string;
   page?: number;

@@ -35,6 +35,27 @@ export class AuthController {
     if (!ctx) {
       throw new UnauthorizedException("Session invalide ou expirée.");
     }
+
+    const orgId = (req.headers["x-organization-id"] || req.query?.organizationId) as string | undefined;
+    if (orgId) {
+      const { prisma: defaultPrisma, PrismaMembershipRepository } = await import("@jaama/database");
+      const { getRolePermissions } = await import("@jaama/auth");
+
+      const membershipRepo = new PrismaMembershipRepository(defaultPrisma);
+      const membership = await membershipRepo.findByOrganizationAndUser(orgId, ctx.user.id);
+
+      if (membership && membership.status === "active") {
+        return {
+          ...ctx,
+          organizationId: orgId,
+          role: membership.role,
+          permissions: getRolePermissions(membership.role as any),
+        };
+      }
+    }
+
+
     return ctx;
   }
+
 }

@@ -2,21 +2,21 @@ import { Injectable, BadRequestException, NotFoundException } from "@nestjs/comm
 import { prisma as defaultPrisma } from "@jaama/database";
 import { UserContext } from "@jaama/types";
 
-export interface CreateInvoiceLineDto {
-  productId: string;
-  quantity: number;
+export class CreateInvoiceLineDto {
+  productId!: string;
+  quantity!: number;
 }
 
-export interface CreateInvoiceDto {
+export class CreateInvoiceDto {
   customerId?: string;
   saleId?: string;
   dueDate?: string;
-  lines: CreateInvoiceLineDto[];
+  lines!: CreateInvoiceLineDto[];
   discountMinor?: number;
   notes?: string;
 }
 
-export interface ListInvoicesQuery {
+export class ListInvoicesQuery {
   status?: string;
   customerId?: string;
   saleId?: string;

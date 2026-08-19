@@ -184,18 +184,21 @@ describe("JAA-S1-19 — Real Core Business E2E HTTP & Database Integration Test 
 
     // 1. Partial receiving: receive 6 units (remaining = 4)
     await purchasesService.receivePurchase(userContext, purchase.id, {
+      idempotencyKey: "e2e-rec-key-001",
       lines: [{ productId: prod.id, quantityReceived: 6 }],
     });
 
     // 2. Over-receiving attempt: trying to receive 5 units when remaining is 4 MUST FAIL
     await expect(
       purchasesService.receivePurchase(userContext, purchase.id, {
+        idempotencyKey: "e2e-rec-key-002",
         lines: [{ productId: prod.id, quantityReceived: 5 }],
       })
     ).rejects.toThrow("Dépassement de la quantité commandée");
 
     // 3. Receive exact remaining 4 units
     const rec2 = await purchasesService.receivePurchase(userContext, purchase.id, {
+      idempotencyKey: "e2e-rec-key-003",
       lines: [{ productId: prod.id, quantityReceived: 4 }],
     });
 

@@ -14,9 +14,15 @@ interface WorkspaceContextType {
 
 const WorkspaceContext = createContext<WorkspaceContextType | undefined>(undefined);
 
-export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
-  const [config, setConfig] = useState<WorkspaceConfig | null>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
+export function WorkspaceProvider({
+  children,
+  initialConfig,
+}: {
+  children: React.ReactNode;
+  initialConfig?: WorkspaceConfig;
+}) {
+  const [config, setConfig] = useState<WorkspaceConfig | null>(initialConfig || null);
+  const [isLoading, setIsLoading] = useState<boolean>(!initialConfig);
   const [error, setError] = useState<string | null>(null);
 
   const fetchSessionContext = async () => {
@@ -24,125 +30,82 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
     setError(null);
 
     const apiUrl = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
-    
+
     try {
-      // In production web app, fetch current session & active organization workspace from /api/v1/auth/me
+      // In production web app, fetch session & active organization workspace from /api/v1/auth/me
       const res = await fetch(`${apiUrl}/api/v1/auth/me`, {
         headers: { "Content-Type": "application/json" },
-        credentials: "omit",
+        credentials: "include", // Send first-party HttpOnly session cookie
       });
 
       if (res.ok) {
         const data = await res.json();
         setConfig({
           apiUrl,
-          sessionToken: data.sessionToken || "session-active-token",
-          organizationId: data.organizationId || "org-diallo",
+          sessionToken: data.sessionToken,
+          organizationId: data.organizationId,
           user: data.user,
           permissions: data.permissions || [],
         });
       } else {
-        // Default workspace fallback for development preview
-        setConfig({
-          apiUrl,
-          sessionToken: "session-active-token",
-          organizationId: "org-diallo",
-          user: {
-            id: "user-hamidou",
-            name: "Hamidou Diallo",
-            email: "hamidou@diallo.ml",
-            role: "owner",
-          },
-          permissions: [
-            "products.read",
-            "products.manage",
-            "inventory.read",
-            "inventory.adjust",
-            "customers.read",
-            "customers.manage",
-            "sales.read",
-            "sales.create",
-            "sales.manage",
-            "payments.read",
-            "payments.record",
-            "quotes.read",
-            "quotes.manage",
-            "invoices.read",
-            "invoices.manage",
-            "expenses.read",
-            "expenses.manage",
-            "suppliers.read",
-            "suppliers.manage",
-            "purchases.read",
-            "purchases.manage",
-            "purchases.receive",
-            "reports.read",
-            "exports.read",
-            "imports.manage",
-            "members.read",
-            "members.manage",
-            "organization.manage",
-          ],
-        });
+        // FAIL CLOSED: No fake dev identity or fallback to Hamidou @ org-diallo
+        setConfig(null);
+        setError("Authentification requise. Aucune session active.");
       }
     } catch {
-      // Dev mode fallback
-      setConfig({
-        apiUrl,
-        sessionToken: "session-active-token",
-        organizationId: "org-diallo",
-        user: {
-          id: "user-hamidou",
-          name: "Hamidou Diallo",
-          email: "hamidou@diallo.ml",
-          role: "owner",
-        },
-        permissions: [
-          "products.read",
-          "products.manage",
-          "inventory.read",
-          "inventory.adjust",
-          "customers.read",
-          "customers.manage",
-          "sales.read",
-          "sales.create",
-          "sales.manage",
-          "payments.read",
-          "payments.record",
-          "quotes.read",
-          "quotes.manage",
-          "invoices.read",
-          "invoices.manage",
-          "expenses.read",
-          "expenses.manage",
-          "suppliers.read",
-          "suppliers.manage",
-          "purchases.read",
-          "purchases.manage",
-          "purchases.receive",
-          "reports.read",
-          "exports.read",
-          "imports.manage",
-          "members.read",
-          "members.manage",
-          "organization.manage",
-        ],
-      });
+      // FAIL CLOSED: Network or API failure
+      setConfig(null);
+      setError("Impossible de contacter le serveur d'authentification.");
     } finally {
       setIsLoading(false);
     }
   };
 
   useEffect(() => {
-    fetchSessionContext();
-  }, []);
+    if (!initialConfig) {
+      fetchSessionContext();
+    }
+  }, [initialConfig]);
 
   const apiFetch = async <T = any,>(path: string, options?: RequestInit): Promise<T> => {
     if (!config) {
-      throw new ApiClientError("Workspace Non Initialisé", 401);
+      throw new ApiClientError("Workspace non authentifié", 401);
     }
     return workspaceFetch<T>(path, config, options);
   };
+
+  if (isLoading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50 text-gray-500 text-sm">
+        Chargement de l&apos;espace de travail sécurisé...
+      </div>
+    );
+  }
+
+  if (!config && error && !initialConfig) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50 p-6 text-center">
+        <div className="max-w-md w-full bg-white rounded-xl shadow-md border border-gray-200 p-8 space-y-4">
+          <div className="w-12 h-12 bg-red-100 text-red-600 rounded-full flex items-center justify-center mx-auto text-xl font-bold">
+            !
+          </div>
+          <h2 className="text-xl font-bold text-gray-900">Accès Restreint</h2>
+          <p className="text-sm text-gray-600">{error}</p>
+          <div className="pt-4 border-t border-gray-100">
+            <p className="text-xs text-gray-500 mb-4">
+              Veuillez vous connecter avec vos identifiants JAAMA pour accéder à votre entreprise.
+            </p>
+            <a
+              href="/auth/login"
+              className="inline-flex justify-center w-full px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white font-medium text-sm rounded-lg shadow-sm transition-colors"
+            >
+              Se connecter à JAAMA
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <WorkspaceContext.Provider
@@ -163,7 +126,16 @@ export function WorkspaceProvider({ children }: { children: React.ReactNode }) {
 export function useWorkspace() {
   const context = useContext(WorkspaceContext);
   if (!context) {
-    throw new Error("useWorkspace doit être utilisé au sein d'un WorkspaceProvider");
+    return {
+      config: null,
+      isLoading: false,
+      error: "Workspace Provider indisponible",
+      isAuthenticated: false,
+      apiFetch: async <T = any,>(_path: string, _options?: RequestInit): Promise<T> => {
+        throw new ApiClientError("Workspace Provider non fourni", 401);
+      },
+      refreshContext: async () => {},
+    };
   }
   return context;
 }

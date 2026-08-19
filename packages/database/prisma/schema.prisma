@@ -156,6 +156,23 @@ model Organization {
   auditEvents        AuditEvent[]
   outboxEvents       OutboxEvent[]
   idempotencyRecords IdempotencyRecord[]
+  invitations        OrganizationInvitation[]
+}
+
+model OrganizationInvitation {
+  id              String       @id @default(uuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  email           String
+  role            Role         @default(vendeur)
+  tokenHash       String       @unique
+  expiresAt       DateTime
+  acceptedAt      DateTime?
+  invitedByUserId String
+  createdAt       DateTime     @default(now())
+
+  @@index([organizationId])
+  @@index([email])
 }
 
 model Membership {

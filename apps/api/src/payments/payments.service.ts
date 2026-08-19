@@ -8,14 +8,14 @@ import { prisma as defaultPrisma } from "@jaama/database";
 import { PaymentMethodCode, UserContext } from "@jaama/types";
 import { hashCanonicalPayload } from "../common/canonical-hash";
 
-export interface RecordPaymentDto {
-  method: PaymentMethodCode;
-  amountMinor: number;
-  idempotencyKey?: string;
+export class RecordPaymentDto {
+  method!: PaymentMethodCode;
+  amountMinor!: number;
+  idempotencyKey!: string;
   notes?: string;
 }
 
-export interface ListReceivablesQuery {
+export class ListReceivablesQuery {
   search?: string;
   customerId?: string;
   status?: string;
@@ -40,6 +40,10 @@ export class PaymentsService {
     const actorId = userContext.actorId;
     const operation = "payments.record";
     const idempotencyKey = dto.idempotencyKey;
+
+    if (!idempotencyKey || typeof idempotencyKey !== "string" || !idempotencyKey.trim()) {
+      throw new BadRequestException("La clé d'idempotence (idempotencyKey) est obligatoire pour enregistrer un règlement.");
+    }
 
     if (!dto.amountMinor || dto.amountMinor <= 0 || !Number.isInteger(dto.amountMinor)) {
       throw new BadRequestException("Le montant du règlement doit être un entier strictement positif.");
@@ -181,7 +185,11 @@ export class PaymentsService {
         },
       });
 
-      const responsePayload = { sale: updatedSale, payment };
+      const responsePayload = {
+        ...updatedSale,
+        sale: updatedSale,
+        payment,
+      };
 
       // 6. Complete Idempotency Record
       if (idempotencyKey) {

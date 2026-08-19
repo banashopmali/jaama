@@ -6,20 +6,34 @@ import {
   UseGuards,
   Req,
   Header,
+  Optional,
 } from "@nestjs/common";
 import { AuthTenantGuard, RequirePermission } from "../common/auth-tenant.guard";
-import { DataExchangeService, ImportProductItem } from "./data-exchange.service";
+import { DataExchangeService, ImportProductItem, ImportCustomerItem } from "./data-exchange.service";
 
-@Controller("api/v1/data-exchange")
+@Controller("api/v1")
 @UseGuards(AuthTenantGuard)
 export class DataExchangeController {
-  constructor(private readonly dataExchangeService: DataExchangeService) {}
+  private readonly dataExchangeService: DataExchangeService;
 
-  @Get("products/export-csv")
+  constructor(@Optional() dataExchangeService?: DataExchangeService) {
+    this.dataExchangeService = dataExchangeService || new DataExchangeService();
+  }
+
+
+  @Get("products/export")
   @RequirePermission("exports.read")
   @Header("Content-Type", "text/csv; charset=utf-8")
   @Header("Content-Disposition", 'attachment; filename="produits-jaama.csv"')
-  public async exportProductsCsv(@Req() req: any) {
+  public async exportProducts(@Req() req: any) {
+    return this.dataExchangeService.exportProductsCsv(req.userContext);
+  }
+
+  @Get("data-exchange/products/export-csv")
+  @RequirePermission("exports.read")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="produits-jaama.csv"')
+  public async exportProductsCsvAlias(@Req() req: any) {
     return this.dataExchangeService.exportProductsCsv(req.userContext);
   }
 
@@ -30,5 +44,31 @@ export class DataExchangeController {
     @Body("items") items: ImportProductItem[]
   ) {
     return this.dataExchangeService.importProductsBulk(req.userContext, items);
+  }
+
+  @Post("data-exchange/products/import")
+  @RequirePermission("imports.manage")
+  public async importProductsAlias(
+    @Req() req: any,
+    @Body("items") items: ImportProductItem[]
+  ) {
+    return this.dataExchangeService.importProductsBulk(req.userContext, items);
+  }
+
+  @Get("customers/export")
+  @RequirePermission("exports.read")
+  @Header("Content-Type", "text/csv; charset=utf-8")
+  @Header("Content-Disposition", 'attachment; filename="clients-jaama.csv"')
+  public async exportCustomers(@Req() req: any) {
+    return this.dataExchangeService.exportCustomersCsv(req.userContext);
+  }
+
+  @Post("customers/import")
+  @RequirePermission("imports.manage")
+  public async importCustomers(
+    @Req() req: any,
+    @Body("items") items: ImportCustomerItem[]
+  ) {
+    return this.dataExchangeService.importCustomersBulk(req.userContext, items);
   }
 }

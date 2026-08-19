@@ -1,8 +1,9 @@
 "use client";
 
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import { Search } from "lucide-react";
 import { Button, Card, Badge, Modal } from "@jaama/ui";
+import { useWorkspace } from "@/context/WorkspaceContext";
 import { formatMoney } from "../../sales/sales.utils";
 
 export interface UIInvoice {
@@ -24,53 +25,52 @@ export interface UIInvoice {
   }>;
 }
 
-export const mockInvoices: UIInvoice[] = [
-  {
-    id: "inv-001",
-    reference: "FAC-2026-0001",
-    customerName: "Bakary Diarra",
-    issueDate: new Date().toISOString(),
-    dueDate: new Date(Date.now() + 864000000).toISOString(),
-    totalMinor: 145000,
-    paidMinor: 125000,
-    remainingMinor: 20000,
-    status: "PARTIALLY_PAID",
-    lines: [
-      {
-        id: "l-1",
-        productNameSnapshot: "Ordinateur Portable HP",
-        quantity: 1,
-        unitPriceMinor: 145000,
-        lineTotalMinor: 145000,
-      },
-    ],
-  },
-  {
-    id: "inv-002",
-    reference: "FAC-2026-0002",
-    customerName: "Oumar Coulibaly",
-    issueDate: new Date(Date.now() - 86400000).toISOString(),
-    dueDate: new Date(Date.now() + 1728000000).toISOString(),
-    totalMinor: 85000,
-    paidMinor: 85000,
-    remainingMinor: 0,
-    status: "PAID",
-    lines: [
-      {
-        id: "l-2",
-        productNameSnapshot: "Imprimante Canon",
-        quantity: 1,
-        unitPriceMinor: 85000,
-        lineTotalMinor: 85000,
-      },
-    ],
-  },
-];
-
 export const InvoicesView: React.FC = () => {
-  const [invoices] = useState<UIInvoice[]>(mockInvoices);
+  const { apiFetch } = useWorkspace();
+  const [invoices, setInvoices] = useState<UIInvoice[]>([]);
+  const [loading, setLoading] = useState<boolean>(true);
+  const [error, setError] = useState<string | null>(null);
+
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedInvoice, setSelectedInvoice] = useState<UIInvoice | null>(null);
+
+  const loadInvoices = async () => {
+    setLoading(true);
+    setError(null);
+    try {
+      const res = await apiFetch("/api/v1/invoices");
+      const list = res.data || [];
+      const mapped: UIInvoice[] = list.map((inv: any) => ({
+        id: inv.id,
+        reference: inv.reference,
+        customerName: inv.customer?.name || "Client comptoir",
+        issueDate: inv.issueDate || inv.createdAt,
+        dueDate: inv.dueDate,
+        totalMinor: inv.totalMinor,
+        paidMinor: inv.paidMinor || 0,
+        remainingMinor: inv.remainingMinor || inv.totalMinor,
+        status: inv.status,
+        lines: (inv.lines || []).map((l: any) => ({
+          id: l.id,
+          productNameSnapshot: l.productNameSnapshot || l.product?.name || "Produit",
+          quantity: l.quantity,
+          unitPriceMinor: l.unitPriceMinor,
+          lineTotalMinor: l.lineTotalMinor,
+        })),
+      }));
+      setInvoices(mapped);
+    } catch (err: any) {
+      setError(err?.message || "Impossible de charger la liste des factures.");
+      setInvoices([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadInvoices();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const filteredInvoices = invoices.filter(
     (inv) =>
@@ -128,67 +128,75 @@ export const InvoicesView: React.FC = () => {
 
       {/* Invoices Table */}
       <Card variant="default" className="overflow-hidden">
-        <div className="overflow-x-auto">
-          <table className="w-full text-left text-sm border-collapse">
-            <thead>
-              <tr className="border-b border-border-subtle bg-surface-subtle text-xs font-semibold text-content-secondary">
-                <th className="py-3 px-4">Référence</th>
-                <th className="py-3 px-4">Client</th>
-                <th className="py-3 px-4">Date d&apos;émission</th>
-                <th className="py-3 px-4 text-right">Montant Total</th>
-                <th className="py-3 px-4 text-right">Reste à payer</th>
-                <th className="py-3 px-4 text-center">Statut</th>
-                <th className="py-3 px-4 text-right">Actions</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border-subtle">
-              {filteredInvoices.map((inv) => (
-                <tr
-                  key={inv.id}
-                  className="hover:bg-surface-hover transition-colors cursor-pointer"
-                  onClick={() => setSelectedInvoice(inv)}
-                >
-                  <td className="py-3.5 px-4 font-mono text-xs font-bold text-content-brand">
-                    {inv.reference}
-                  </td>
-                  <td className="py-3.5 px-4 font-semibold text-content-primary">
-                    {inv.customerName}
-                  </td>
-                  <td className="py-3.5 px-4 text-xs text-content-secondary">
-                    {new Date(inv.issueDate).toLocaleDateString("fr-FR")}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-bold text-content-primary">
-                    {formatMoney(inv.totalMinor)}
-                  </td>
-                  <td className="py-3.5 px-4 text-right font-extrabold text-state-warning-fg">
-                    {formatMoney(inv.remainingMinor)}
-                  </td>
-                  <td className="py-3.5 px-4 text-center">
-                    {inv.status === "PAID" ? (
-                      <Badge variant="success" size="sm">Payée</Badge>
-                    ) : inv.status === "PARTIALLY_PAID" ? (
-                      <Badge variant="warning" size="sm">Partielle</Badge>
-                    ) : (
-                      <Badge variant="info" size="sm">Émise</Badge>
-                    )}
-                  </td>
-                  <td className="py-3.5 px-4 text-right">
-                    <Button
-                      variant="secondary"
-                      size="sm"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        setSelectedInvoice(inv);
-                      }}
-                    >
-                      Détails
-                    </Button>
-                  </td>
+        {loading ? (
+          <div className="p-12 text-center text-sm text-content-secondary">
+            Chargement des factures...
+          </div>
+        ) : error ? (
+          <div className="p-12 text-center text-sm text-state-danger-fg">{error}</div>
+        ) : (
+          <div className="overflow-x-auto">
+            <table className="w-full text-left text-sm border-collapse">
+              <thead>
+                <tr className="border-b border-border-subtle bg-surface-subtle text-xs font-semibold text-content-secondary">
+                  <th className="py-3 px-4">Référence</th>
+                  <th className="py-3 px-4">Client</th>
+                  <th className="py-3 px-4">Date d&apos;émission</th>
+                  <th className="py-3 px-4 text-right">Montant Total</th>
+                  <th className="py-3 px-4 text-right">Reste à payer</th>
+                  <th className="py-3 px-4 text-center">Statut</th>
+                  <th className="py-3 px-4 text-right">Actions</th>
                 </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+              </thead>
+              <tbody className="divide-y divide-border-subtle">
+                {filteredInvoices.map((inv) => (
+                  <tr
+                    key={inv.id}
+                    className="hover:bg-surface-hover transition-colors cursor-pointer"
+                    onClick={() => setSelectedInvoice(inv)}
+                  >
+                    <td className="py-3.5 px-4 font-mono text-xs font-bold text-content-brand">
+                      {inv.reference}
+                    </td>
+                    <td className="py-3.5 px-4 font-semibold text-content-primary">
+                      {inv.customerName}
+                    </td>
+                    <td className="py-3.5 px-4 text-xs text-content-secondary">
+                      {new Date(inv.issueDate).toLocaleDateString("fr-FR")}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-bold text-content-primary">
+                      {formatMoney(inv.totalMinor)}
+                    </td>
+                    <td className="py-3.5 px-4 text-right font-extrabold text-state-warning-fg">
+                      {formatMoney(inv.remainingMinor)}
+                    </td>
+                    <td className="py-3.5 px-4 text-center">
+                      {inv.status === "PAID" ? (
+                        <Badge variant="success" size="sm">Payée</Badge>
+                      ) : inv.status === "PARTIALLY_PAID" ? (
+                        <Badge variant="warning" size="sm">Partielle</Badge>
+                      ) : (
+                        <Badge variant="info" size="sm">Émise</Badge>
+                      )}
+                    </td>
+                    <td className="py-3.5 px-4 text-right">
+                      <Button
+                        variant="secondary"
+                        size="sm"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedInvoice(inv);
+                        }}
+                      >
+                        Détails
+                      </Button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
       </Card>
 
       {/* Invoice Detail Modal */}

@@ -7,6 +7,7 @@ import {
   Param,
   UseGuards,
   Req,
+  Optional,
 } from "@nestjs/common";
 import { AuthTenantGuard, RequirePermission } from "../common/auth-tenant.guard";
 import { SuppliersService } from "./suppliers.service";
@@ -14,7 +15,12 @@ import { SuppliersService } from "./suppliers.service";
 @Controller("api/v1/suppliers")
 @UseGuards(AuthTenantGuard)
 export class SuppliersController {
-  constructor(private readonly suppliersService: SuppliersService) {}
+  private readonly suppliersService: SuppliersService;
+
+  constructor(@Optional() suppliersService?: SuppliersService) {
+    this.suppliersService = suppliersService || new SuppliersService();
+  }
+
 
   @Get()
   @RequirePermission("suppliers.read")

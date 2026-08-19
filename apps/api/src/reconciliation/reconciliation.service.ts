@@ -2,13 +2,13 @@ import { Injectable } from "@nestjs/common";
 import { prisma as defaultPrisma } from "@jaama/database";
 import { UserContext } from "@jaama/types";
 
-export interface AnomalyReport {
-  salesTotalDiscrepancies: any[];
-  paymentsDiscrepancies: any[];
-  inventoryDiscrepancies: any[];
-  purchasesDiscrepancies: any[];
-  hasAnomalies: boolean;
-  checkedAt: string;
+export class AnomalyReport {
+  salesTotalDiscrepancies!: any[];
+  paymentsDiscrepancies!: any[];
+  inventoryDiscrepancies!: any[];
+  purchasesDiscrepancies!: any[];
+  hasAnomalies!: boolean;
+  checkedAt!: string;
 }
 
 @Injectable()
@@ -39,7 +39,7 @@ export class ReconciliationService {
     const inventoryDiscrepancies: any[] = [];
     const purchasesDiscrepancies: any[] = [];
 
-    // 1. Verify Sale Totals vs Lines sum & Payments sum
+    // 1. Verify Sale Totals vs Lines sum & Payments sum & Remaining & PaymentStatus
     for (const sale of sales) {
       const calculatedSubtotal = sale.lines.reduce((sum, l) => sum + l.lineTotalMinor, 0);
       const expectedTotal = calculatedSubtotal - sale.discountMinor;
@@ -48,8 +48,20 @@ export class ReconciliationService {
         salesTotalDiscrepancies.push({
           saleId: sale.id,
           reference: sale.reference,
+          type: "TOTAL_MISMATCH",
           storedTotal: sale.totalMinor,
           calculatedTotal: expectedTotal,
+        });
+      }
+
+      const expectedRemaining = Math.max(0, sale.totalMinor - sale.paidMinor);
+      if (sale.remainingMinor !== expectedRemaining) {
+        salesTotalDiscrepancies.push({
+          saleId: sale.id,
+          reference: sale.reference,
+          type: "REMAINING_MISMATCH",
+          storedRemaining: sale.remainingMinor,
+          calculatedRemaining: expectedRemaining,
         });
       }
 

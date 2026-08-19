@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useReducer, useTransition } from "react";
+import React, { useReducer, useTransition, useState, useEffect } from "react";
 import { PaymentMethod } from "../../sales/sales.types";
 import { posInitialState, posReducer } from "../pos.reducer";
 import { mockPosProducts } from "../pos.mock";
@@ -12,9 +12,11 @@ import { CheckoutView } from "./CheckoutView";
 import { SaleSuccess } from "./SaleSuccess";
 import { PosApiContext, submitSaleToApi } from "../pos.api";
 import { calculateSubtotal, calculateTotal, validatePosCheckout } from "../pos.utils";
+import { useWorkspace } from "@/context/WorkspaceContext";
 
 export interface PosInteractiveSectionProps {
   apiContext?: PosApiContext;
+  initialProducts?: PosProduct[];
   apiAdapter?: (
     cart: PosCartLine[],
     discountAmount: number,
@@ -29,10 +31,53 @@ export interface PosInteractiveSectionProps {
 
 export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
   apiContext,
+  initialProducts,
   apiAdapter,
 }) => {
+  const { apiFetch, config } = useWorkspace();
   const [state, dispatch] = useReducer(posReducer, posInitialState);
   const [isPending, startTransition] = useTransition();
+
+  const [products, setProducts] = useState<PosProduct[]>(
+    initialProducts || (config || apiContext ? [] : mockPosProducts)
+  );
+  const [loadingProducts, setLoadingProducts] = useState<boolean>(
+    !initialProducts && Boolean(config || apiContext)
+  );
+  const [catalogError, setCatalogError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (initialProducts) return;
+
+    async function loadCatalog() {
+      setLoadingProducts(true);
+      setCatalogError(null);
+      try {
+        const res = await apiFetch("/api/v1/products");
+        const list = res.data || [];
+        const mapped: PosProduct[] = list.map((p: any) => ({
+          id: p.id,
+          sku: p.sku,
+          name: p.name,
+          category: p.category,
+          priceAmount: p.unitPriceMinor,
+          currency: "FCFA",
+          stockCount: p.inventoryBalance ? p.inventoryBalance.availableQuantity : 0,
+        }));
+        setProducts(mapped);
+      } catch (err: any) {
+        setCatalogError(err?.message || "Impossible de charger le catalogue de la caisse.");
+        setProducts([]);
+      } finally {
+        setLoadingProducts(false);
+      }
+    }
+
+    if (config || apiContext) {
+      loadCatalog();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [config, apiContext, initialProducts]);
 
   const handleConfirmSaleApi = () => {
     const subtotal = calculateSubtotal(state.cart);
@@ -63,10 +108,16 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
             state.paidAmountInput,
             state.cashReceivedInput,
             state.paymentAllocations,
-            state.idempotencyKey,
+            state.idempotencyKey || "",
             state.customer.id
           );
-        } else if (apiContext) {
+        } else if (apiContext || config) {
+          const effectiveApiContext = apiContext || {
+            apiUrl: config!.apiUrl,
+            sessionToken: config!.sessionToken,
+            organizationId: config!.organizationId,
+          };
+
           confirmedSale = await submitSaleToApi(
             state.cart,
             state.discountAmount,
@@ -74,9 +125,9 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
             state.paidAmountInput,
             state.cashReceivedInput,
             state.paymentAllocations,
-            state.idempotencyKey,
+            state.idempotencyKey || "",
             state.customer.id,
-            apiContext
+            effectiveApiContext
           );
         } else {
           throw new Error("Session d’entreprise indisponible. Impossible d’enregistrer cette vente.");
@@ -116,16 +167,26 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
             state.step === "catalog" ? "block" : "hidden lg:block"
           }`}
         >
-          <ProductCatalog
-            products={mockPosProducts}
-            searchQuery={state.searchQuery}
-            selectedCategory={state.selectedCategory}
-            cart={state.cart}
-            onSearchChange={(q) => dispatch({ type: "SET_SEARCH", payload: q })}
-            onSelectCategory={(cat: string) => dispatch({ type: "SET_CATEGORY", payload: cat })}
-            onAddToCart={(prod: PosProduct) => dispatch({ type: "ADD_TO_CART", payload: prod })}
-            onResetSearch={() => dispatch({ type: "SET_SEARCH", payload: "" })}
-          />
+          {loadingProducts ? (
+            <div className="p-12 text-center text-sm text-gray-500 bg-white rounded-xl border border-gray-200">
+              Chargement des produits de la caisse...
+            </div>
+          ) : catalogError ? (
+            <div className="p-8 text-center text-sm text-red-600 bg-red-50 rounded-xl border border-red-200">
+              {catalogError}
+            </div>
+          ) : (
+            <ProductCatalog
+              products={products}
+              searchQuery={state.searchQuery}
+              selectedCategory={state.selectedCategory}
+              cart={state.cart}
+              onSearchChange={(q) => dispatch({ type: "SET_SEARCH", payload: q })}
+              onSelectCategory={(cat: string) => dispatch({ type: "SET_CATEGORY", payload: cat })}
+              onAddToCart={(prod: PosProduct) => dispatch({ type: "ADD_TO_CART", payload: prod })}
+              onResetSearch={() => dispatch({ type: "SET_SEARCH", payload: "" })}
+            />
+          )}
         </div>
 
         {/* CART & CHECKOUT PANEL */}
@@ -156,6 +217,7 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
               cashReceivedInput={state.cashReceivedInput}
               paymentAllocations={state.paymentAllocations}
               validationError={state.validationError}
+              submitError={state.submitError}
               onBackToCart={() => dispatch({ type: "GO_TO_STEP", payload: "cart" })}
               onSelectPaymentMethod={(m: PaymentMethod) => dispatch({ type: "SET_PAYMENT_METHOD", payload: m })}
               onPaidAmountChange={(val: number) => dispatch({ type: "SET_PAID_AMOUNT", payload: val })}

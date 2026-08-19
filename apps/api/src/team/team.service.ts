@@ -1,16 +1,28 @@
-import { Injectable, BadRequestException, NotFoundException, ForbiddenException } from "@nestjs/common";
+import {
+  Injectable,
+  BadRequestException,
+  NotFoundException,
+  ForbiddenException,
+} from "@nestjs/common";
 import { prisma as defaultPrisma } from "@jaama/database";
 import { UserContext } from "@jaama/types";
+import { hashPassword } from "@jaama/auth";
 import * as crypto from "crypto";
 
-export interface InviteMemberDto {
-  email: string;
-  role: "owner" | "admin" | "employe" | "comptable" | "vendeur";
+export class InviteMemberDto {
+  email!: string;
+  role!: "owner" | "admin" | "employe" | "comptable" | "vendeur";
   name?: string;
 }
 
-export interface UpdateMemberRoleDto {
-  role: "owner" | "admin" | "employe" | "comptable" | "vendeur";
+export class UpdateMemberRoleDto {
+  role!: "owner" | "admin" | "employe" | "comptable" | "vendeur";
+}
+
+export class AcceptInviteDto {
+  token!: string;
+  name?: string;
+  password?: string;
 }
 
 @Injectable()
@@ -51,46 +63,39 @@ export class TeamService {
     }
 
     return prismaClient.$transaction(async (tx) => {
-      // 1. Find or create user
-      let user = await tx.user.findUnique({ where: { email: emailClean } });
-      if (!user) {
-        user = await tx.user.create({
-          data: {
-            email: emailClean,
-            name: dto.name ? dto.name.trim() : emailClean.split("@")[0],
+      // 1. Check if active membership already exists
+      const existingUser = await tx.user.findUnique({ where: { email: emailClean } });
+      if (existingUser) {
+        const existingMembership = await tx.membership.findUnique({
+          where: {
+            organizationId_userId: {
+              organizationId,
+              userId: existingUser.id,
+            },
           },
         });
-        await tx.credential.create({
-          data: {
-            userId: user.id,
-            passwordHash: "$argon2id$v=19$m=65536,t=3,p=4$invitedUserFallbackPlaceholderToken$",
-          },
-        });
+
+        if (existingMembership && existingMembership.status === "active") {
+          throw new BadRequestException("Cet utilisateur est déjà membre actif de l'organisation.");
+        }
       }
 
-      // 2. Check existing membership
-      const existingMembership = await tx.membership.findUnique({
-        where: {
-          organizationId_userId: {
-            organizationId,
-            userId: user.id,
-          },
-        },
-      });
+      // 2. Generate CSPRNG token & tokenHash
+      const plaintextToken = crypto.randomBytes(32).toString("hex");
+      const tokenHash = crypto.createHash("sha256").update(plaintextToken).digest("hex");
+      const expiresAt = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000); // 7 days
 
-      if (existingMembership) {
-        throw new BadRequestException("Cet utilisateur est déjà membre de l'organisation.");
-      }
+      const validRoles = ["owner", "admin", "vendeur", "comptable", "employe"];
+      const finalRole = validRoles.includes(dto.role) ? dto.role : "vendeur";
 
-      // 3. Generate CSPRNG token for invitation
-      const inviteToken = crypto.randomBytes(32).toString("hex");
-
-      const membership = await tx.membership.create({
+      const invitation = await tx.organizationInvitation.create({
         data: {
           organizationId,
-          userId: user.id,
-          role: dto.role as any,
-          status: "INVITED",
+          email: emailClean,
+          role: finalRole as any,
+          tokenHash,
+          expiresAt,
+          invitedByUserId: userContext.actorId,
         },
       });
 
@@ -99,19 +104,112 @@ export class TeamService {
           organizationId,
           actorId: userContext.actorId,
           action: "member.invite",
-          resourceType: "membership",
-          resourceId: membership.id,
+          resourceType: "organization_invitation",
+          resourceId: invitation.id,
           metadataJson: JSON.stringify({ email: emailClean, role: dto.role }),
         },
       });
 
       return {
-        id: membership.id,
-        userId: user.id,
+        id: invitation.id,
         email: emailClean,
         role: dto.role,
-        status: "INVITED",
-        inviteToken,
+        expiresAt,
+        inviteToken: plaintextToken,
+      };
+    });
+  }
+
+  public async acceptInvite(dto: AcceptInviteDto & { inviteToken?: string }, prismaClient = defaultPrisma): Promise<any> {
+    const tokenVal = dto.token || dto.inviteToken;
+    if (!tokenVal || !tokenVal.trim()) {
+      throw new BadRequestException("Jeton d'invitation manquant.");
+    }
+
+    const tokenHash = crypto.createHash("sha256").update(tokenVal.trim()).digest("hex");
+
+    return prismaClient.$transaction(async (tx) => {
+      const invitation = await tx.organizationInvitation.findUnique({
+        where: { tokenHash },
+      });
+
+      if (!invitation) {
+        throw new NotFoundException("Invitation introuvable ou jeton invalide.");
+      }
+
+      if (invitation.acceptedAt) {
+        throw new BadRequestException("Cette invitation a déjà été acceptée.");
+      }
+
+      if (invitation.expiresAt < new Date()) {
+        throw new BadRequestException("Cette invitation a expiré.");
+      }
+
+      // Find or create User
+      let user = await tx.user.findUnique({ where: { email: invitation.email } });
+      if (!user) {
+        const userName = dto.name ? dto.name.trim() : invitation.email.split("@")[0];
+        user = await tx.user.create({
+          data: {
+            email: invitation.email,
+            name: userName,
+          },
+        });
+
+        const rawPassword = dto.password || "JaamaDefaultPassword2026!";
+        const passwordHash = await hashPassword(rawPassword);
+        await tx.credential.create({
+          data: {
+            userId: user.id,
+            passwordHash,
+          },
+        });
+      }
+
+      // Upsert Membership
+      const membership = await tx.membership.upsert({
+        where: {
+          organizationId_userId: {
+            organizationId: invitation.organizationId,
+            userId: user.id,
+          },
+        },
+        create: {
+          organizationId: invitation.organizationId,
+          userId: user.id,
+          role: invitation.role,
+          status: "active",
+        },
+        update: {
+          role: invitation.role,
+          status: "active",
+        },
+      });
+
+      // Mark invitation as accepted
+      await tx.organizationInvitation.update({
+        where: { id: invitation.id },
+        data: { acceptedAt: new Date() },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          organizationId: invitation.organizationId,
+          actorId: user.id,
+          action: "member.accept_invite",
+          resourceType: "organization_invitation",
+          resourceId: invitation.id,
+          metadataJson: JSON.stringify({ userId: user.id, role: invitation.role }),
+        },
+      });
+
+      return {
+        status: "SUCCESS",
+        organizationId: invitation.organizationId,
+        userId: user.id,
+        membershipId: membership.id,
+        role: membership.role,
+        membership,
       };
     });
   }
