@@ -3,10 +3,11 @@ import {
   BadRequestException,
   NotFoundException,
   ForbiddenException,
+  UnauthorizedException,
 } from "@nestjs/common";
 import { prisma as defaultPrisma } from "@jaama/database";
 import { UserContext } from "@jaama/types";
-import { hashPassword } from "@jaama/auth";
+import { hashPassword, verifyPassword } from "@jaama/auth";
 import * as crypto from "crypto";
 
 export class InviteMemberDto {
