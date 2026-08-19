@@ -6,6 +6,18 @@ export async function seedPostgresDatabase(client: PrismaClient = prisma) {
   // Execute clean seeding with extended 30s transaction timeout to prevent test concurrency timeouts
   await client.$transaction(
     async (tx) => {
+      await tx.notification.deleteMany();
+      await tx.quoteLine.deleteMany();
+      await tx.quote.deleteMany();
+      await tx.invoiceLine.deleteMany();
+      await tx.invoice.deleteMany();
+      await tx.receivingLine.deleteMany();
+      await tx.receiving.deleteMany();
+      await tx.purchaseLine.deleteMany();
+      await tx.purchase.deleteMany();
+      await tx.expense.deleteMany();
+      await tx.supplier.deleteMany();
+
       await tx.idempotencyRecord.deleteMany();
       await tx.outboxEvent.deleteMany();
       await tx.auditEvent.deleteMany();
