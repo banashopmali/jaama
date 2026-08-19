@@ -10,7 +10,7 @@ import { ProductCatalog } from "./ProductCatalog";
 import { CartPanel } from "./CartPanel";
 import { CheckoutView } from "./CheckoutView";
 import { SaleSuccess } from "./SaleSuccess";
-import { PosApiContext, submitSaleToApi, mockSubmitSaleToApi } from "../pos.api";
+import { PosApiContext, submitSaleToApi } from "../pos.api";
 import { calculateSubtotal, calculateTotal, validatePosCheckout } from "../pos.utils";
 
 export interface PosInteractiveSectionProps {
@@ -79,15 +79,7 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
             apiContext
           );
         } else {
-          // Fallback test adapter when no live API context is injected
-          confirmedSale = mockSubmitSaleToApi(
-            state.cart,
-            state.discountAmount,
-            state.paymentMethod,
-            state.paidAmountInput,
-            state.cashReceivedInput,
-            state.paymentAllocations
-          );
+          throw new Error("Session d’entreprise indisponible. Impossible d’enregistrer cette vente.");
         }
         dispatch({ type: "SUBMIT_SUCCESS", payload: confirmedSale });
       } catch (err: any) {

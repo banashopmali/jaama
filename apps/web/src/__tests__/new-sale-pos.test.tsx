@@ -13,7 +13,7 @@ import {
 } from "../features/pos/pos.utils";
 import { PosView } from "../features/pos/components/PosView";
 import { mockPosProducts } from "../features/pos/pos.mock";
-import { submitSaleToApi } from "../features/pos/pos.api";
+import { submitSaleToApi, mockSubmitSaleToApi } from "../features/pos/pos.api";
 
 // Mock next/navigation
 vi.mock("next/navigation", () => ({
@@ -22,6 +22,15 @@ vi.mock("next/navigation", () => ({
     get: (key: string) => null,
   }),
 }));
+
+const asyncMockAdapter = async (
+  cart: any,
+  discount: any,
+  method: any,
+  paid: any,
+  cash: any,
+  allocs: any
+) => mockSubmitSaleToApi(cart, discount, method, paid, cash, allocs);
 
 describe("JAAMA New Sale / POS V1 — Integrity & Behavior Contracts (JAA-S0-06)", () => {
   describe("Pure POS Math & Single Source of Truth Contracts", () => {
@@ -168,8 +177,8 @@ describe("JAAMA New Sale / POS V1 — Integrity & Behavior Contracts (JAA-S0-06)
       expect(disabledAddBtn).toBeDisabled();
     });
 
-    it("calculates cash change correctly and displays summary on success", async () => {
-      render(<PosView posState="ready" />);
+    it("calculates cash change correctly and displays summary on success when explicit mock adapter is injected", async () => {
+      render(<PosView posState="ready" apiAdapter={asyncMockAdapter} />);
 
       fireEvent.click(screen.getByRole("button", { name: /Ajouter 1 Riz Parfumé 5kg/i }));
       fireEvent.click(screen.getByRole("button", { name: /Ajouter 1 Ampoule LED 12W/i }));
@@ -196,7 +205,7 @@ describe("JAAMA New Sale / POS V1 — Integrity & Behavior Contracts (JAA-S0-06)
     });
 
     it("rejects non-cash overpayment confirmation with inline error message", () => {
-      render(<PosView posState="ready" />);
+      render(<PosView posState="ready" apiAdapter={asyncMockAdapter} />);
 
       fireEvent.click(screen.getByRole("button", { name: /Ajouter 1 Coca-Cola 50cl/i }));
       fireEvent.click(screen.getAllByRole("button", { name: /Continuer vers le paiement/i })[0]);
@@ -215,8 +224,8 @@ describe("JAAMA New Sale / POS V1 — Integrity & Behavior Contracts (JAA-S0-06)
       ).toBeGreaterThan(0);
     });
 
-    it("generates deterministic mock reference VTE-0025 on sale confirmation", async () => {
-      render(<PosView posState="ready" />);
+    it("generates deterministic mock reference VTE-0025 on sale confirmation with explicit mock adapter", async () => {
+      render(<PosView posState="ready" apiAdapter={asyncMockAdapter} />);
 
       fireEvent.click(screen.getByRole("button", { name: /Ajouter 1 Coca-Cola 50cl/i }));
       fireEvent.click(screen.getAllByRole("button", { name: /Continuer vers le paiement/i })[0]);
@@ -227,6 +236,62 @@ describe("JAAMA New Sale / POS V1 — Integrity & Behavior Contracts (JAA-S0-06)
         expect(screen.getByText("VTE-0025")).toBeInTheDocument();
         expect(screen.getByText("SIMULATION FRONTEND — MOCK TEST ADAPTER")).toBeInTheDocument();
       });
+    });
+
+    it("fails closed and stays on checkout when rendered without apiContext or apiAdapter", async () => {
+      render(<PosView posState="ready" />);
+
+      fireEvent.click(screen.getByRole("button", { name: /Ajouter 1 Coca-Cola 50cl/i }));
+      fireEvent.click(screen.getAllByRole("button", { name: /Continuer vers le paiement/i })[0]);
+      fireEvent.click(screen.getAllByRole("button", { name: /Sélectionner le mode de paiement Espèces/i })[0]);
+      fireEvent.click(screen.getAllByRole("button", { name: /Confirmer la vente/i })[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Session d’entreprise indisponible. Impossible d’enregistrer cette vente.")).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText("VTE-0025")).not.toBeInTheDocument();
+      expect(screen.queryByText("Vente enregistrée")).not.toBeInTheDocument();
+      expect(screen.getByRole("heading", { level: 3, name: "Règlement de la vente" })).toBeInTheDocument();
+    });
+
+    it("preserves checkout state and allows retry with same idempotency key on adapter error", async () => {
+      let callCount = 0;
+      let capturedKey = "";
+      const failingThenSucceedingAdapter = vi.fn(async (cart, discount, method, paid, cash, allocs, key) => {
+        callCount++;
+        capturedKey = key;
+        if (callCount === 1) {
+          throw new Error("Erreur réseau temporaire");
+        }
+        return mockSubmitSaleToApi(cart, discount, method, paid, cash, allocs);
+      });
+
+      render(<PosView posState="ready" apiAdapter={failingThenSucceedingAdapter} />);
+
+      fireEvent.click(screen.getByRole("button", { name: /Ajouter 1 Coca-Cola 50cl/i }));
+      fireEvent.click(screen.getAllByRole("button", { name: /Continuer vers le paiement/i })[0]);
+      fireEvent.click(screen.getAllByRole("button", { name: /Sélectionner le mode de paiement Espèces/i })[0]);
+
+      // 1st Attempt -> Fails
+      fireEvent.click(screen.getAllByRole("button", { name: /Confirmer la vente/i })[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText("Erreur réseau temporaire")).toBeInTheDocument();
+      });
+
+      expect(screen.queryByText("VTE-0025")).not.toBeInTheDocument();
+
+      // 2nd Attempt -> Succeeds using exact same idempotency key
+      fireEvent.click(screen.getAllByRole("button", { name: /Confirmer la vente/i })[0]);
+
+      await waitFor(() => {
+        expect(screen.getByText("VTE-0025")).toBeInTheDocument();
+        expect(screen.getByText("Vente enregistrée")).toBeInTheDocument();
+      });
+
+      expect(failingThenSucceedingAdapter).toHaveBeenCalledTimes(2);
+      expect(capturedKey).toMatch(/^pos-/);
     });
 
     it("fails closed when submitSaleToApi is called without authenticated context or when network fails", async () => {
