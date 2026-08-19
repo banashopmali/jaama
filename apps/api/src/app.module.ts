@@ -6,6 +6,9 @@ import { SalesController } from "./sales/sales.controller";
 import { SalesService } from "./sales/sales.service";
 import { AuthController } from "./auth/auth.controller";
 import { AuthService } from "./auth/auth.service";
+import { ProductsModule } from "./products/products.module";
+import { InventoryModule } from "./inventory/inventory.module";
+import { CustomersModule } from "./customers/customers.module";
 import { CorrelationMiddleware } from "./common/correlation.middleware";
 import { GlobalExceptionFilter } from "./common/global-exception.filter";
 import { AuthTenantGuard } from "./common/auth-tenant.guard";
@@ -18,6 +21,9 @@ import { AuthTenantGuard } from "./common/auth-tenant.guard";
         limit: 100, // 100 requests per minute per IP
       },
     ]),
+    ProductsModule,
+    InventoryModule,
+    CustomersModule,
   ],
   controllers: [HealthController, SalesController, AuthController],
   providers: [

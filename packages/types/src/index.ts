@@ -1,4 +1,4 @@
-// Authoritative JAAMA Domain & Business Contracts (JAA-S0-07)
+// Authoritative JAAMA Domain & Business Contracts (JAA-S0-07 / JAA-S1-01..20)
 
 export type CurrencyCode = "XOF" | "XAF" | "EUR" | "USD";
 
@@ -19,15 +19,32 @@ export type Role = "owner" | "admin" | "employe" | "comptable" | "vendeur";
 export type Permission =
   | "sales.read"
   | "sales.create"
+  | "sales.manage"
   | "products.read"
   | "products.manage"
   | "inventory.read"
   | "inventory.adjust"
+  | "customers.read"
+  | "customers.manage"
   | "payments.read"
   | "payments.record"
+  | "quotes.read"
+  | "quotes.manage"
+  | "invoices.read"
+  | "invoices.manage"
+  | "expenses.read"
+  | "expenses.manage"
+  | "suppliers.read"
+  | "suppliers.manage"
+  | "purchases.read"
+  | "purchases.manage"
+  | "purchases.receive"
   | "organization.manage"
+  | "members.read"
   | "members.manage"
-  | "reports.read";
+  | "reports.read"
+  | "imports.manage"
+  | "exports.read";
 
 export interface Organization {
   id: string;
@@ -71,7 +88,11 @@ export interface Customer {
   id: string;
   organizationId: string;
   name: string;
-  phone?: string;
+  phone?: string | null;
+  email?: string | null;
+  address?: string | null;
+  notes?: string | null;
+  status: "active" | "archived";
   type: "walk_in" | "registered";
   createdAt?: Date;
   updatedAt?: Date;
@@ -82,9 +103,14 @@ export interface Product {
   organizationId: string;
   sku: string;
   name: string;
+  description?: string | null;
   category: string;
   unitPriceMinor: number;
-  status: "active" | "archived";
+  costMinor?: number | null;
+  currencyCode: CurrencyCode;
+  status: "active" | "inactive" | "archived";
+  barcode?: string | null;
+  lowStockThreshold?: number | null;
   createdAt?: Date;
   updatedAt?: Date;
 }
@@ -99,7 +125,17 @@ export interface InventoryBalance {
   updatedAt?: Date;
 }
 
-export type StockMovementType = "SALE_OUT" | "PURCHASE_IN" | "ADJUSTMENT" | "TRANSFER" | "RETURN";
+export type StockMovementType =
+  | "OPENING"
+  | "SALE_OUT"
+  | "PURCHASE_IN"
+  | "ADJUSTMENT"
+  | "ADJUSTMENT_IN"
+  | "ADJUSTMENT_OUT"
+  | "TRANSFER"
+  | "RETURN"
+  | "RETURN_IN"
+  | "RETURN_OUT";
 
 export interface StockMovement {
   id: string;
@@ -107,7 +143,7 @@ export interface StockMovement {
   productId: string;
   movementType: StockMovementType;
   quantityDelta: number;
-  reference?: string;
+  reference?: string | null;
   recordedAt: Date;
 }
 
@@ -131,7 +167,7 @@ export interface Sale {
   id: string;
   organizationId: string;
   reference: string;
-  customerId: string | null; // null represents walk-in customer context
+  customerId: string | null;
   sellerUserId: string;
   lines: SaleLine[];
   subtotalMinor: number;

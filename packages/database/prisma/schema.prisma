@@ -16,11 +16,16 @@ enum Role {
 }
 
 enum StockMovementType {
+  OPENING
   SALE_OUT
   PURCHASE_IN
   ADJUSTMENT
+  ADJUSTMENT_IN
+  ADJUSTMENT_OUT
   TRANSFER
   RETURN
+  RETURN_IN
+  RETURN_OUT
 }
 
 enum SaleStatus {
@@ -59,6 +64,30 @@ enum IdempotencyStatus {
   COMPLETED
 }
 
+enum QuoteStatus {
+  DRAFT
+  SENT
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum InvoiceStatus {
+  DRAFT
+  ISSUED
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+}
+
+enum PurchaseStatus {
+  DRAFT
+  ORDERED
+  PARTIALLY_RECEIVED
+  RECEIVED
+  CANCELLED
+}
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
@@ -67,11 +96,14 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  credential  Credential?
-  sessions    Session[]
-  memberships Membership[]
-  sales       Sale[]       @relation("SellerSales")
-  auditEvents AuditEvent[] @relation("ActorAuditEvents")
+  credential        Credential?
+  sessions          Session[]
+  memberships       Membership[]
+  sales             Sale[]         @relation("SellerSales")
+  auditEvents       AuditEvent[]   @relation("ActorAuditEvents")
+  createdExpenses   Expense[]      @relation("ExpenseCreator")
+  createdReceivings Receiving[]    @relation("ReceivingCreator")
+  notifications     Notification[]
 }
 
 model Credential {
@@ -110,6 +142,17 @@ model Organization {
   sales              Sale[]
   payments           Payment[]
   saleLines          SaleLine[]
+  quotes             Quote[]
+  quoteLines         QuoteLine[]
+  invoices           Invoice[]
+  invoiceLines       InvoiceLine[]
+  expenses           Expense[]
+  suppliers          Supplier[]
+  purchases          Purchase[]
+  purchaseLines      PurchaseLine[]
+  receivings         Receiving[]
+  receivingLines     ReceivingLine[]
+  notifications      Notification[]
   auditEvents        AuditEvent[]
   outboxEvents       OutboxEvent[]
   idempotencyRecords IdempotencyRecord[]
@@ -136,31 +179,46 @@ model Customer {
   organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   name           String
   phone          String?
+  email          String?
+  address        String?
+  notes          String?
+  status         String       @default("active") // "active" | "archived"
   type           String       @default("walk_in") // "walk_in" | "registered"
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
 
-  sales Sale[]
+  sales    Sale[]
+  quotes   Quote[]
+  invoices Invoice[]
 
   @@unique([organizationId, id])
   @@index([organizationId, name])
 }
 
 model Product {
-  id             String       @id @default(uuid())
-  organizationId String
-  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  sku            String
-  name           String
-  category       String
-  unitPriceMinor Int
-  status         String       @default("active") // "active" | "archived"
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
+  id                String       @id @default(uuid())
+  organizationId    String
+  organization      Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  sku               String
+  name              String
+  description       String?
+  category          String
+  unitPriceMinor    Int
+  costMinor         Int?
+  currencyCode      String       @default("XOF")
+  status            String       @default("active") // "active" | "inactive" | "archived"
+  barcode           String?
+  lowStockThreshold Int?         @default(5)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
 
   inventoryBalances InventoryBalance[]
   stockMovements    StockMovement[]
   saleLines         SaleLine[]
+  quoteLines        QuoteLine[]
+  invoiceLines      InvoiceLine[]
+  purchaseLines     PurchaseLine[]
+  receivingLines    ReceivingLine[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, sku])
@@ -216,6 +274,7 @@ model Sale {
 
   lines    SaleLine[]
   payments Payment[]
+  invoices Invoice[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, reference])
@@ -254,6 +313,227 @@ model Payment {
 
   @@unique([organizationId, id])
   @@index([organizationId, saleId])
+}
+
+model Quote {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reference      String
+  customerId     String?
+  customer       Customer?    @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: SetNull)
+  subtotalMinor  Int
+  discountMinor  Int          @default(0)
+  totalMinor     Int
+  expirationDate DateTime?
+  status         QuoteStatus  @default(DRAFT)
+  notes          String?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  lines QuoteLine[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, reference])
+  @@index([organizationId, customerId])
+}
+
+model QuoteLine {
+  id                  String       @id @default(uuid())
+  organizationId      String
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  quoteId             String
+  quote               Quote        @relation(fields: [organizationId, quoteId], references: [organizationId, id], onDelete: Cascade)
+  productId           String
+  product             Product      @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  productNameSnapshot String
+  skuSnapshot         String
+  quantity            Int
+  unitPriceMinor      Int
+  lineTotalMinor      Int
+
+  @@unique([organizationId, id])
+  @@index([organizationId, quoteId])
+}
+
+model Invoice {
+  id             String        @id @default(uuid())
+  organizationId String
+  organization   Organization  @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reference      String
+  saleId         String?
+  sale           Sale?         @relation(fields: [organizationId, saleId], references: [organizationId, id], onDelete: SetNull)
+  customerId     String?
+  customer       Customer?     @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: SetNull)
+  issueDate      DateTime      @default(now())
+  dueDate        DateTime?
+  subtotalMinor  Int
+  discountMinor  Int           @default(0)
+  totalMinor     Int
+  paidMinor      Int           @default(0)
+  remainingMinor Int
+  status         InvoiceStatus @default(ISSUED)
+  notes          String?
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+
+  lines InvoiceLine[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, reference])
+  @@index([organizationId, customerId])
+}
+
+model InvoiceLine {
+  id                  String       @id @default(uuid())
+  organizationId      String
+  organization        Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  invoiceId           String
+  invoice             Invoice      @relation(fields: [organizationId, invoiceId], references: [organizationId, id], onDelete: Cascade)
+  productId           String
+  product             Product      @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  productNameSnapshot String
+  skuSnapshot         String
+  quantity            Int
+  unitPriceMinor      Int
+  lineTotalMinor      Int
+
+  @@unique([organizationId, id])
+  @@index([organizationId, invoiceId])
+}
+
+model Supplier {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  name           String
+  phone          String?
+  email          String?
+  address        String?
+  notes          String?
+  status         String       @default("active") // "active" | "archived"
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+
+  purchases Purchase[]
+  expenses  Expense[]
+
+  @@unique([organizationId, id])
+  @@index([organizationId, name])
+}
+
+model Expense {
+  id              String       @id @default(uuid())
+  organizationId  String
+  organization    Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  category        String
+  description     String
+  amountMinor     Int
+  currencyCode    String       @default("XOF")
+  occurredAt      DateTime     @default(now())
+  paymentMethod   String?
+  supplierId      String?
+  supplier        Supplier?    @relation(fields: [organizationId, supplierId], references: [organizationId, id], onDelete: SetNull)
+  reference       String?
+  notes           String?
+  createdByUserId String
+  createdByUser   User         @relation("ExpenseCreator", fields: [createdByUserId], references: [id], onDelete: Restrict)
+  createdAt       DateTime     @default(now())
+  updatedAt       DateTime     @updatedAt
+
+  @@unique([organizationId, id])
+  @@index([organizationId, category, occurredAt])
+}
+
+model Purchase {
+  id             String         @id @default(uuid())
+  organizationId String
+  organization   Organization   @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reference      String
+  supplierId     String
+  supplier       Supplier       @relation(fields: [organizationId, supplierId], references: [organizationId, id], onDelete: Restrict)
+  totalMinor     Int
+  status         PurchaseStatus @default(DRAFT)
+  orderDate      DateTime       @default(now())
+  expectedDate   DateTime?
+  notes          String?
+  createdAt      DateTime       @default(now())
+  updatedAt      DateTime       @updatedAt
+
+  lines      PurchaseLine[]
+  receivings Receiving[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, reference])
+  @@index([organizationId, supplierId])
+}
+
+model PurchaseLine {
+  id               String       @id @default(uuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  purchaseId       String
+  purchase         Purchase     @relation(fields: [organizationId, purchaseId], references: [organizationId, id], onDelete: Cascade)
+  productId        String
+  product          Product      @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  orderedQuantity  Int
+  receivedQuantity Int          @default(0)
+  unitCostMinor    Int
+  lineTotalMinor   Int
+
+  @@unique([organizationId, id])
+  @@index([organizationId, purchaseId])
+}
+
+model Receiving {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  purchaseId     String
+  purchase       Purchase     @relation(fields: [organizationId, purchaseId], references: [organizationId, id], onDelete: Cascade)
+  reference      String
+  receivedAt     DateTime     @default(now())
+  createdById    String
+  createdBy      User         @relation("ReceivingCreator", fields: [createdById], references: [id], onDelete: Restrict)
+  notes          String?
+  createdAt      DateTime     @default(now())
+
+  lines ReceivingLine[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, reference])
+  @@index([organizationId, purchaseId])
+}
+
+model ReceivingLine {
+  id               String       @id @default(uuid())
+  organizationId   String
+  organization     Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  receivingId      String
+  receiving        Receiving    @relation(fields: [organizationId, receivingId], references: [organizationId, id], onDelete: Cascade)
+  productId        String
+  product          Product      @relation(fields: [organizationId, productId], references: [organizationId, id], onDelete: Restrict)
+  quantityReceived Int
+
+  @@unique([organizationId, id])
+  @@index([organizationId, receivingId])
+}
+
+model Notification {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type           String       // "low_stock" | "out_of_stock" | "receivable" | "invoice_due" | "purchase"
+  title          String
+  message        String
+  resourceLink   String?
+  isRead         Boolean      @default(false)
+  createdAt      DateTime     @default(now())
+
+  @@unique([organizationId, id])
+  @@index([organizationId, userId, isRead, createdAt])
 }
 
 model AuditEvent {

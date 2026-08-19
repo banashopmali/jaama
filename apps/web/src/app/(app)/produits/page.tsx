@@ -1,6 +1,6 @@
 import React from "react";
-import { ModulePlaceholder } from "@/components/app-shell/ModulePlaceholder";
+import { ProductsView } from "@/features/products/components/ProductsView";
 
 export default function ProduitsPage() {
-  return <ModulePlaceholder title="Produits" moduleKey="produits" />;
+  return <ProductsView />;
 }

@@ -14,3 +14,4 @@ export * from "./Skeleton";
 export * from "./Spinner";
 export * from "./Separator";
 export * from "./Container";
+export * from "./Modal";
