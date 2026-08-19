@@ -11,6 +11,9 @@ import { InventoryModule } from "./inventory/inventory.module";
 import { CustomersModule } from "./customers/customers.module";
 import { QuotesModule } from "./quotes/quotes.module";
 import { InvoicesModule } from "./invoices/invoices.module";
+import { ExpensesModule } from "./expenses/expenses.module";
+import { SuppliersModule } from "./suppliers/suppliers.module";
+import { PurchasesModule } from "./purchases/purchases.module";
 import { CorrelationMiddleware } from "./common/correlation.middleware";
 import { GlobalExceptionFilter } from "./common/global-exception.filter";
 import { AuthTenantGuard } from "./common/auth-tenant.guard";
@@ -28,6 +31,9 @@ import { AuthTenantGuard } from "./common/auth-tenant.guard";
     CustomersModule,
     QuotesModule,
     InvoicesModule,
+    ExpensesModule,
+    SuppliersModule,
+    PurchasesModule,
   ],
   controllers: [HealthController, SalesController, AuthController],
   providers: [
