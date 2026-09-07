@@ -91,9 +91,10 @@ jobs:
 
     env:
       DATABASE_URL: "postgresql://jaama_user:jaama_pass@localhost:5432/jaama_db?schema=public"
-      PORT: "3001"
       NEXT_PUBLIC_API_URL: "http://127.0.0.1:3001"
-      NODE_ENV: "production"
+      WEB_URL: "http://127.0.0.1:3000"
+      CORS_ALLOWED_ORIGINS: "http://127.0.0.1:3000"
+      SESSION_SECRET: "jaama-ci-e2e-session-secret-32-chars-min"
 
     steps:
       - name: Checkout repository
@@ -128,11 +129,68 @@ jobs:
       - name: Build API and Web Applications
         run: pnpm build
 
-      - name: Start API Server & Web App in Background
+      - name: Start API and Web Services
         run: |
-          pnpm --filter @jaama/api start &
-          pnpm --filter @jaama/web start &
-          sleep 10
+          mkdir -p /tmp/jaama-logs
+          PORT=3001 NODE_ENV=test pnpm --filter @jaama/api start > /tmp/jaama-logs/api.log 2>&1 &
+          echo "API_PID=$!" >> $GITHUB_ENV
+          NODE_ENV=production pnpm --filter @jaama/web exec next start -p 3000 > /tmp/jaama-logs/web.log 2>&1 &
+          echo "WEB_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for API and Web Services Readiness
+        run: |
+          echo "Polling API readiness at http://127.0.0.1:3001/health/readiness..."
+          API_READY=false
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3001/health/readiness > /dev/null; then
+              echo "API is READY on http://127.0.0.1:3001 (attempt $i)"
+              API_READY=true
+              break
+            fi
+            if ! kill -0 $API_PID 2>/dev/null; then
+              echo "API process exited unexpectedly! Log:"
+              cat /tmp/jaama-logs/api.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if [ "$API_READY" = "false" ]; then
+            echo "API readiness timeout after 60 seconds! Log:"
+            cat /tmp/jaama-logs/api.log
+            exit 1
+          fi
+
+          echo "Polling Web readiness at http://127.0.0.1:3000/auth/login..."
+          WEB_READY=false
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3000/auth/login > /dev/null; then
+              echo "Web is READY on http://127.0.0.1:3000 (attempt $i)"
+              WEB_READY=true
+              break
+            fi
+            if ! kill -0 $WEB_PID 2>/dev/null; then
+              echo "Web process exited unexpectedly! Log:"
+              cat /tmp/jaama-logs/web.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if [ "$WEB_READY" = "false" ]; then
+            echo "Web readiness timeout after 60 seconds! Log:"
+            cat /tmp/jaama-logs/web.log
+            exit 1
+          fi
 
       - name: Run Playwright Real Browser E2E Suite
         run: pnpm --filter @jaama/web exec playwright test
+
+      - name: Output Diagnostic Logs on Failure
+        if: failure()
+        run: |
+          echo "=== API LOG ==="
+          cat /tmp/jaama-logs/api.log || true
+          echo "=== WEB LOG ==="
+          cat /tmp/jaama-logs/web.log || true
+
