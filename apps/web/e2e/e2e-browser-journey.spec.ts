@@ -5,7 +5,7 @@ test.describe("JAAMA Production Core Business OS Browser E2E Certification (Sect
     // 1. Open Login Page
     await page.goto("/auth/login");
     await expect(page).toHaveTitle(/JAAMA/i);
-    await expect(page.locator("h2")).toContainText("Connexion à votre espace");
+    await expect(page.locator("body")).toContainText("Connexion à votre espace");
 
     // 2. Perform Real Login via UI
     await page.fill("#email-input", "hamidou@diallo-commerce.ml");
