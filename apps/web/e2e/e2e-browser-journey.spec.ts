@@ -35,11 +35,12 @@ test.describe("JAAMA Production Core Business OS Browser E2E Certification (Sect
     await page.goto("/ventes/nouvelle");
     await expect(page.locator("body")).toContainText("Nouvelle vente");
 
-    // Click product to add to cart (10 times)
-    const productCard = page.locator("text=Coca-Cola 50cl").first();
-    await expect(productCard).toBeVisible();
+    // Click product add button to add to cart (10 times)
+    const productCard = page.locator("div").filter({ hasText: "Coca-Cola 50cl" }).first();
+    const addButton = productCard.locator("button").first();
+    await expect(addButton).toBeVisible();
     for (let i = 0; i < 10; i++) {
-      await productCard.click();
+      await addButton.click();
     }
 
     // Proceed to Checkout
