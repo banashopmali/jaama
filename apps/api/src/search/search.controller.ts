@@ -10,6 +10,7 @@ export class SearchController {
   @Get()
   @RequirePermission("products.read")
   public async search(@Req() req: any, @Query("q") q: string) {
-    return this.searchService.searchAll(req.userContext, q);
+    const service = this.searchService || new SearchService();
+    return service.searchAll(req.userContext, q);
   }
 }

@@ -8,7 +8,7 @@ export interface SalesHeaderProps {
 }
 
 export const SalesHeader: React.FC<SalesHeaderProps> = ({
-  businessName = "Diallo Commerce",
+  businessName = "Mon Entreprise",
 }) => {
   return (
     <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-border-subtle pb-5">

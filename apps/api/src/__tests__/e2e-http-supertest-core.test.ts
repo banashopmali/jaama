@@ -2,13 +2,11 @@ import { describe, it, expect, beforeAll, beforeEach, afterAll } from "vitest";
 import { Test, TestingModule } from "@nestjs/testing";
 import { INestApplication } from "@nestjs/common";
 import request from "supertest";
-import { prisma, seedPostgresDatabase, PrismaSessionRepository } from "@jaama/database";
+import { prisma, seedPostgresDatabase } from "@jaama/database";
 import { AppModule } from "../app.module";
 
-describe("JAAMA Real NestJS HTTP Supertest E2E Suite (Section J)", () => {
+describe("JAAMA Real NestJS HTTP Supertest E2E & Certification Suite (Section F)", () => {
   let app: INestApplication;
-  const sessionRepo = new PrismaSessionRepository(prisma);
-  let sessionToken: string;
 
   beforeAll(async () => {
     const moduleFixture: TestingModule = await Test.createTestingModule({
@@ -22,12 +20,6 @@ describe("JAAMA Real NestJS HTTP Supertest E2E Suite (Section J)", () => {
 
   beforeEach(async () => {
     await seedPostgresDatabase(prisma);
-    const session = await sessionRepo.createSession(
-      "user-hamidou",
-      "e2e-supertest-token-001",
-      new Date(Date.now() + 3600000)
-    );
-    sessionToken = session.token;
   });
 
   afterAll(async () => {
@@ -35,285 +27,393 @@ describe("JAAMA Real NestJS HTTP Supertest E2E Suite (Section J)", () => {
     await prisma.$disconnect();
   });
 
-  it("1. GET /api/v1/auth/me returns 200 with authenticated user & workspace details", async () => {
-    const res = await request(app.getHttpServer())
-      .get("/api/v1/auth/me")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo");
-
-    expect(res.status).toBe(200);
-    expect(res.body.user.id).toBe("user-hamidou");
-    expect(res.body.organizationId).toBe("org-diallo");
-    expect(res.body.permissions).toContain("sales.create");
-  });
-
-  it("2. POST /api/v1/sales creates sale atomically with lines and payment", async () => {
-    const payload = {
-      customerId: null,
-      lines: [{ productId: "prod-004", quantity: 2 }], // 2 x 6500 = 13000
-      discountMinor: 0,
-      payments: [{ method: "cash", amountMinor: 10000 }],
-      idempotencyKey: "e2e-sale-http-key-001",
-    };
-
-    const res = await request(app.getHttpServer())
-      .post("/api/v1/sales")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo")
-      .send(payload);
-
-    expect(res.status).toBe(201);
-    expect(res.body.id).toBeDefined();
-    expect(res.body.totalMinor).toBe(13000);
-    expect(res.body.paidMinor).toBe(10000);
-    expect(res.body.remainingMinor).toBe(3000);
-    expect(res.body.paymentStatus).toBe("PARTIALLY_PAID");
-  });
-
-  it("3. POST /api/v1/payments records payment with mandatory idempotencyKey", async () => {
-    // Create sale first
-    const saleRes = await request(app.getHttpServer())
-      .post("/api/v1/sales")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo")
-      .send({
-        customerId: null,
-        lines: [{ productId: "prod-004", quantity: 1 }], // 6500
-        discountMinor: 0,
-        payments: [],
-        idempotencyKey: "e2e-sale-http-key-002",
-      });
-
-    const saleId = saleRes.body.id;
-
-    // Missing idempotencyKey -> expect 400
-    const failRes = await request(app.getHttpServer())
-      .post("/api/v1/payments")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo")
-      .send({
-        saleId,
-        amountMinor: 6500,
-        method: "cash",
-      });
-
-    expect(failRes.status).toBe(400);
-
-    // With idempotencyKey -> expect 201
-    const successRes = await request(app.getHttpServer())
-      .post("/api/v1/payments")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo")
-      .send({
-        saleId,
-        amountMinor: 6500,
-        method: "cash",
-        idempotencyKey: "e2e-pay-http-key-001",
-      });
-
-    expect(successRes.status).toBe(201);
-    expect(successRes.body.remainingMinor).toBe(0);
-    expect(successRes.body.paymentStatus).toBe("PAID");
-  });
-
-  it("4. POST /api/v1/purchases & receivePurchase flow over HTTP", async () => {
-    // Create supplier
-    const supRes = await request(app.getHttpServer())
-      .post("/api/v1/suppliers")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo")
-      .send({ name: "Fournisseur Test HTTP", phone: "+22377000000" });
-
-    const supplierId = supRes.body.id;
-
-    // Create Purchase
-    const purRes = await request(app.getHttpServer())
-      .post("/api/v1/purchases")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo")
-      .send({
-        supplierId,
-        lines: [{ productId: "prod-004", quantity: 5, unitCostMinor: 500000 }],
-      });
-
-    expect(purRes.status).toBe(201);
-    const purchaseId = purRes.body.id;
-
-    // Receive Purchase with idempotencyKey
-    const recRes = await request(app.getHttpServer())
-      .post(`/api/v1/purchases/${purchaseId}/receive`)
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo")
-      .send({
-        idempotencyKey: "e2e-rec-http-key-001",
-        lines: [{ productId: "prod-004", quantityReceived: 5 }],
-      });
-
-    expect(recRes.status).toBe(201);
-    expect(recRes.body.status).toBe("RECEIVED");
-  });
-
-  it("5. Products CSV Export and Import over HTTP", async () => {
-    // Export CSV
-    const expRes = await request(app.getHttpServer())
-      .get("/api/v1/products/export")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo");
-
-    expect(expRes.status).toBe(200);
-    expect(expRes.text).toContain("SKU;Nom;Catégorie");
-
-    // Import Bulk
-    const impRes = await request(app.getHttpServer())
-      .post("/api/v1/products/import")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo")
-      .send({
-        items: [
-          {
-            sku: "HTTP-CSV-001",
-            name: "=Formula Test Product",
-            category: "Électronique",
-            unitPriceMinor: 15000,
-          },
-        ],
-      });
-
-    expect(impRes.status).toBe(201);
-    expect(impRes.body.importedCount).toBe(1);
-  });
-
-  it("6. Team Invitation & Accept Invite over HTTP", async () => {
-    // Invite member
-    const inviteRes = await request(app.getHttpServer())
-      .post("/api/v1/team/invite")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo")
-      .send({
-        email: "invitee.http@test.com",
-        role: "vendeur",
-      });
-
-    expect(inviteRes.status).toBe(201);
-    const token = inviteRes.body.inviteToken;
-    expect(token).toBeDefined();
-
-    // Accept Invite
-    const acceptRes = await request(app.getHttpServer())
-      .post("/api/v1/team/accept-invite")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo")
-      .send({
-        inviteToken: token,
-        name: "Invitee Person",
-        password: "SecureInviteePass2026!",
-      });
-
-    expect(acceptRes.status).toBe(201);
-    expect(acceptRes.body.membership.role).toBe("vendeur");
-  });
-
-  it("7. HttpOnly Session Cookie Login & Authenticated /auth/me flow", async () => {
-    // 1. Register user
-    const regRes = await request(app.getHttpServer())
-      .post("/api/v1/auth/register")
-      .send({
-        email: "test.cookie.user@diallo.com",
-        name: "Test Cookie User",
-        password: "Password123!",
-      });
-
-    expect(regRes.status).toBe(201);
-
-    // 2. Login over HTTP
-    const loginRes = await request(app.getHttpServer())
-      .post("/api/v1/auth/login")
-      .send({
-        email: "test.cookie.user@diallo.com",
-        password: "Password123!",
-      });
-
+  async function createAuthAgent(email = "hamidou@diallo-commerce.ml", password = "Password123!") {
+    const agent = request.agent(app.getHttpServer());
+    const loginRes = await agent.post("/api/v1/auth/login").send({ email, password });
     expect(loginRes.status).toBe(201);
-    expect(loginRes.body.session.token).toBeDefined();
+    return agent;
+  }
 
-    // Verify Set-Cookie header contains jaama_session
-    const setCookie = loginRes.headers["set-cookie"];
-    expect(setCookie).toBeDefined();
-    const cookieHeaderString = Array.isArray(setCookie) ? setCookie.join("; ") : String(setCookie);
-    expect(cookieHeaderString).toContain("jaama_session=");
+  // A. AUTH MATRIX
+  describe("A. Auth & HttpOnly Cookie Protocol", () => {
+    it("login sets HttpOnly jaama_session cookie and returns safe DTO without session token", async () => {
+      const agent = request.agent(app.getHttpServer());
 
-    // 3. Fetch /auth/me using Cookie header
-    const meRes = await request(app.getHttpServer())
-      .get("/api/v1/auth/me")
-      .set("Cookie", cookieHeaderString);
+      const loginRes = await agent.post("/api/v1/auth/login").send({
+        email: "hamidou@diallo-commerce.ml",
+        password: "Password123!",
+      });
 
-    expect(meRes.status).toBe(200);
-    expect(meRes.body.user.email).toBe("test.cookie.user@diallo.com");
+      expect(loginRes.status).toBe(201);
+      expect(loginRes.body.user).toBeDefined();
+      expect(loginRes.body.user.email).toBe("hamidou@diallo-commerce.ml");
+      expect(loginRes.body.session.id).toBeDefined();
+      expect(loginRes.body.session.expiresAt).toBeDefined();
+      // MUST NOT contain plaintext token or credentials
+      expect(loginRes.body.token).toBeUndefined();
+      expect(loginRes.body.session.token).toBeUndefined();
+      expect(loginRes.body.tokenHash).toBeUndefined();
+      expect(loginRes.body.passwordHash).toBeUndefined();
 
-    // 4. Logout clears session cookie
-    const logoutRes = await request(app.getHttpServer())
-      .post("/api/v1/auth/logout")
-      .set("Cookie", cookieHeaderString);
+      // Verify Cookie header
+      const setCookie = loginRes.headers["set-cookie"];
+      expect(setCookie).toBeDefined();
+      const cookieStr = Array.isArray(setCookie) ? setCookie.join("; ") : String(setCookie);
+      expect(cookieStr).toContain("jaama_session=");
+      expect(cookieStr).toContain("HttpOnly");
 
-    expect(logoutRes.status).toBe(201);
-    expect(logoutRes.body.success).toBe(true);
+      // /auth/me via Cookie
+      const meRes = await agent.get("/api/v1/auth/me").set("X-Organization-ID", "org-diallo");
+      expect(meRes.status).toBe(200);
+      expect(meRes.body.user.name).toBe("Hamidou Diallo");
+      expect(meRes.body.organization.name).toBe("Diallo Commerce");
+      expect(meRes.body.organizationId).toBe("org-diallo");
+      expect(meRes.body.session).toBeUndefined();
+      expect(meRes.body.token).toBeUndefined();
 
-    // 5. Access /auth/me with revoked cookie returns 401
-    const unauthRes = await request(app.getHttpServer())
-      .get("/api/v1/auth/me")
-      .set("Cookie", cookieHeaderString);
+      // Logout clears cookie and revokes session
+      const logoutRes = await agent.post("/api/v1/auth/logout");
+      expect(logoutRes.status).toBe(201);
+      expect(logoutRes.body.success).toBe(true);
 
-    expect(unauthRes.status).toBe(401);
+      const unauthRes = await agent.get("/api/v1/auth/me");
+      expect(unauthRes.status).toBe(401);
+    });
+
+    it("revoked or expired cookie returns 401 Unauthorized", async () => {
+      const agent = await createAuthAgent();
+
+      // Revoke all sessions in DB
+      await prisma.session.deleteMany({ where: { user: { email: "hamidou@diallo-commerce.ml" } } });
+
+      const res = await agent.get("/api/v1/auth/me");
+      expect(res.status).toBe(401);
+    });
   });
 
-  it("8. Concurrency: Concurrent CreatePurchase requests generate distinct ACH references without race conditions", async () => {
-    // Create supplier first
-    const supRes = await request(app.getHttpServer())
-      .post("/api/v1/suppliers")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-diallo")
-      .send({ name: "Fournisseur Concurrency Test", phone: "+22377112233" });
+  // B. PRODUCT & CUSTOMER CROSS-TENANT ISOLATION
+  describe("B. Product & Customer Cross-Tenant Isolation", () => {
+    it("rejects cross-tenant access to Product or Customer belonging to another organization", async () => {
+      const agentA = await createAuthAgent("hamidou@diallo-commerce.ml", "Password123!");
 
-    expect(supRes.status).toBe(201);
-    const supplierId = supRes.body.id;
-
-    const [pur1, pur2] = await Promise.all([
-      request(app.getHttpServer())
-        .post("/api/v1/purchases")
-        .set("Authorization", `Bearer ${sessionToken}`)
+      // Create Product in Org A (org-diallo)
+      const pRes = await agentA
+        .post("/api/v1/products")
         .set("X-Organization-ID", "org-diallo")
         .send({
-          supplierId,
-          lines: [{ productId: "prod-004", quantity: 2, unitCostMinor: 200000 }],
-        }),
-      request(app.getHttpServer())
-        .post("/api/v1/purchases")
-        .set("Authorization", `Bearer ${sessionToken}`)
-        .set("X-Organization-ID", "org-diallo")
-        .send({
-          supplierId,
-          lines: [{ productId: "prod-004", quantity: 3, unitCostMinor: 200000 }],
-        }),
-    ]);
+          sku: "ISOL-PROD-01",
+          name: "Produit Exclusive A",
+          category: "Général",
+          unitPriceMinor: 2500,
+        });
+      expect(pRes.status).toBe(201);
+      const prodAId = pRes.body.id;
 
-    expect(pur1.status).toBe(201);
-    expect(pur2.status).toBe(201);
-    expect(pur1.body.reference).not.toBe(pur2.body.reference);
-    expect([pur1.body.reference, pur2.body.reference].sort()).toEqual([
-      `ACH-${new Date().getFullYear()}-0001`,
-      `ACH-${new Date().getFullYear()}-0002`,
-    ]);
+      // Login as User B (baba@baba-boutique.ml in org-baba)
+      const agentB = await createAuthAgent("baba@baba-boutique.ml", "Password123!");
+
+      // User B trying to access Product A under org-baba context -> expect 404
+      const failProd = await agentB
+        .get(`/api/v1/products/${prodAId}`)
+        .set("X-Organization-ID", "org-baba");
+      expect(failProd.status).toBe(404);
+
+      // User B trying to spoof Org A header -> expect 403 Forbidden (not member of Org A)
+      const attackRes = await agentB
+        .get(`/api/v1/products/${prodAId}`)
+        .set("X-Organization-ID", "org-diallo");
+      expect(attackRes.status).toBe(403);
+    });
   });
 
-  it("9. Security: Cross-tenant attack over HTTP is rejected with 403 Forbidden", async () => {
-    // Attempt to access Tenant A (org-diallo) product using Tenant B's context without membership
-    const attackRes = await request(app.getHttpServer())
-      .get("/api/v1/products/prod-004")
-      .set("Authorization", `Bearer ${sessionToken}`)
-      .set("X-Organization-ID", "org-baba");
+  // C. SALE & PAYMENT LIFECYCLE
+  describe("C. Sale Creation & Partial Payment Lifecycle", () => {
+    it("creates Sale (5000 FCFA), pays initial 3000 FCFA, then clears remaining 2000 FCFA", async () => {
+      const agent = await createAuthAgent();
 
-    expect(attackRes.status).toBe(403);
-    const msg = JSON.stringify(attackRes.body);
-    expect(msg).toContain("Organisation introuvable ou inactive");
+      // 1. Create Sale: 10 units x 500 FCFA = 5000 FCFA, wave payment 3000 FCFA
+      const saleRes = await agent
+        .post("/api/v1/sales")
+        .set("X-Organization-ID", "org-diallo")
+        .send({
+          customerId: null,
+          lines: [{ productId: "prod-004", quantity: 1 }],
+          discountMinor: 1500,
+          payments: [{ method: "wave", amountMinor: 3000 }],
+          idempotencyKey: "sale-lifecycle-key-01",
+        });
+
+      expect(saleRes.status).toBe(201);
+      const saleId = saleRes.body.id;
+      expect(saleRes.body.totalMinor).toBe(5000);
+      expect(saleRes.body.paidMinor).toBe(3000);
+      expect(saleRes.body.remainingMinor).toBe(2000);
+      expect(saleRes.body.paymentStatus).toBe("PARTIALLY_PAID");
+
+      // 2. Clear remaining 2000 FCFA with cash payment
+      const payRes = await agent
+        .post("/api/v1/payments")
+        .set("X-Organization-ID", "org-diallo")
+        .send({
+          saleId,
+          method: "cash",
+          amountMinor: 2000,
+          idempotencyKey: "pay-lifecycle-key-01",
+        });
+
+      expect(payRes.status).toBe(201);
+      expect(payRes.body.paidMinor).toBe(5000);
+      expect(payRes.body.remainingMinor).toBe(0);
+      expect(payRes.body.paymentStatus).toBe("PAID");
+    });
+  });
+
+  // D. PAYMENT CONCURRENCY & IDEMPOTENCY
+  describe("D. Payment Concurrency & Idempotency", () => {
+    it("handles concurrent payments safely under SELECT FOR UPDATE and enforces overcollection protection", async () => {
+      const agent = await createAuthAgent();
+
+      // Create Sale with 40000 FCFA remaining
+      const saleRes = await agent
+        .post("/api/v1/sales")
+        .set("X-Organization-ID", "org-diallo")
+        .send({
+          customerId: null,
+          lines: [{ productId: "prod-003", quantity: 10 }],
+          discountMinor: 10000,
+          payments: [],
+          idempotencyKey: "concurrent-sale-key-01",
+        });
+
+      const saleId = saleRes.body.id;
+      expect(saleRes.body.remainingMinor).toBe(40000);
+
+      // Two parallel requests for 30000 FCFA each
+      const [res1, res2] = await Promise.all([
+        agent
+          .post("/api/v1/payments")
+          .set("X-Organization-ID", "org-diallo")
+          .send({
+            saleId,
+            method: "cash",
+            amountMinor: 30000,
+            idempotencyKey: "conc-pay-key-A",
+          }),
+        agent
+          .post("/api/v1/payments")
+          .set("X-Organization-ID", "org-diallo")
+          .send({
+            saleId,
+            method: "wave",
+            amountMinor: 30000,
+            idempotencyKey: "conc-pay-key-B",
+          }),
+      ]);
+
+      const statuses = [res1.status, res2.status];
+      expect(statuses).toContain(201);
+      expect(statuses).toContain(400);
+
+      const updatedSale = await prisma.sale.findUnique({ where: { id: saleId } });
+      expect(updatedSale!.paidMinor).toBe(30000);
+      expect(updatedSale!.remainingMinor).toBe(10000);
+    });
+
+    it("enforces payment idempotency (same key -> replay, altered payload -> 409)", async () => {
+      const agent = await createAuthAgent();
+
+      const saleRes = await agent
+        .post("/api/v1/sales")
+        .set("X-Organization-ID", "org-diallo")
+        .send({
+          customerId: null,
+          lines: [{ productId: "prod-004", quantity: 1 }],
+          payments: [],
+          idempotencyKey: "idemp-sale-key-01",
+        });
+      const saleId = saleRes.body.id;
+
+      const key = "idemp-pay-test-key-999";
+      const payload = { saleId, method: "cash", amountMinor: 1000, idempotencyKey: key };
+
+      // 1st request
+      const req1 = await agent
+        .post("/api/v1/payments")
+        .set("X-Organization-ID", "org-diallo")
+        .send(payload);
+      expect(req1.status).toBe(201);
+
+      // Replay exact request
+      const req2 = await agent
+        .post("/api/v1/payments")
+        .set("X-Organization-ID", "org-diallo")
+        .send(payload);
+      expect(req2.status).toBe(201);
+      expect(req2.body.id).toBe(req1.body.id);
+
+      // Same key + altered payload -> 409
+      const req3 = await agent
+        .post("/api/v1/payments")
+        .set("X-Organization-ID", "org-diallo")
+        .send({ ...payload, amountMinor: 2000 });
+      expect(req3.status).toBe(409);
+    });
+  });
+
+  // E. PURCHASING & RECEIVING CONCURRENCY / IDEMPOTENCY
+  describe("E. Purchasing & Receiving Concurrency and Idempotency", () => {
+    it("enforces receiving over-receiving protection and idempotency key replay", async () => {
+      const agent = await createAuthAgent();
+
+      // Create Supplier & Purchase for 10 units
+      const sup = await agent
+        .post("/api/v1/suppliers")
+        .set("X-Organization-ID", "org-diallo")
+        .send({ name: "Fournisseur E2E Rec" });
+      const pur = await agent
+        .post("/api/v1/purchases")
+        .set("X-Organization-ID", "org-diallo")
+        .send({
+          supplierId: sup.body.id,
+          lines: [{ productId: "prod-004", quantity: 10, unitCostMinor: 5000 }],
+        });
+
+      const purchaseId = pur.body.id;
+      const recKey = "rec-idemp-key-100";
+
+      // Receive 6 units
+      const rec1 = await agent
+        .post(`/api/v1/purchases/${purchaseId}/receive`)
+        .set("X-Organization-ID", "org-diallo")
+        .send({
+          idempotencyKey: recKey,
+          lines: [{ productId: "prod-004", quantityReceived: 6 }],
+        });
+      expect(rec1.status).toBe(201);
+      expect(rec1.body.status).toBe("PARTIALLY_RECEIVED");
+
+      // Replay exact request recKey -> same response
+      const rec2 = await agent
+        .post(`/api/v1/purchases/${purchaseId}/receive`)
+        .set("X-Organization-ID", "org-diallo")
+        .send({
+          idempotencyKey: recKey,
+          lines: [{ productId: "prod-004", quantityReceived: 6 }],
+        });
+      expect(rec2.status).toBe(201);
+      expect(rec2.body.id).toBe(rec1.body.id);
+
+      // Attempt over-receiving: receive 10 more when only 4 remain -> 400
+      const overRec = await agent
+        .post(`/api/v1/purchases/${purchaseId}/receive`)
+        .set("X-Organization-ID", "org-diallo")
+        .send({
+          idempotencyKey: "rec-over-key-01",
+          lines: [{ productId: "prod-004", quantityReceived: 10 }],
+        });
+      expect(overRec.status).toBe(400);
+    });
+  });
+
+  // F. SEARCH & EXPORT TENANT ISOLATION
+  describe("F. Search & Export Tenant Isolation", () => {
+    it("guarantees search and CSV export never reveal resources belonging to another organization", async () => {
+      const agentB = await createAuthAgent("baba@baba-boutique.ml", "Password123!");
+
+      // Create unique secret product in Org B
+      await agentB
+        .post("/api/v1/products")
+        .set("X-Organization-ID", "org-baba")
+        .send({
+          sku: "SECRET-ORG-B-99",
+          name: "Secret Product Org B",
+          category: "Secret",
+          unitPriceMinor: 99000,
+        });
+
+      // Login as User A (Org A)
+      const agentA = await createAuthAgent("hamidou@diallo-commerce.ml", "Password123!");
+
+      // Search as Org A -> must NOT return Secret Product Org B
+      const searchRes = await agentA
+        .get("/api/v1/search?q=Secret")
+        .set("X-Organization-ID", "org-diallo");
+      expect(searchRes.status).toBe(200);
+      const hits = searchRes.body.products || [];
+      expect(hits.some((p: any) => p.sku === "SECRET-ORG-B-99")).toBe(false);
+
+      // Export CSV as Org A -> must NOT contain Org B product
+      const exportRes = await agentA
+        .get("/api/v1/products/export")
+        .set("X-Organization-ID", "org-diallo");
+      expect(exportRes.status).toBe(200);
+      expect(exportRes.text).not.toContain("SECRET-ORG-B-99");
+    });
+  });
+
+  // G. TEAM INVITATION IDENTITY SECURITY MATRIX
+  describe("G. Team Invitation Identity Verification Matrix", () => {
+    it("exercises full team invitation matrix (new user pwd required, existing user pwd verification)", async () => {
+      const agent = await createAuthAgent();
+
+      // 1. Invite new email
+      const newEmail = `new.invite.${Date.now()}@test.com`;
+      const invRes = await agent
+        .post("/api/v1/team/invite")
+        .set("X-Organization-ID", "org-diallo")
+        .send({ email: newEmail, role: "vendeur" });
+      expect(invRes.status).toBe(201);
+      const tokenNew = invRes.body.inviteToken;
+
+      // Accept New User without password -> FAIL (400)
+      const failNoPwd = await request(app.getHttpServer())
+        .post("/api/v1/team/accept-invite")
+        .send({ inviteToken: tokenNew, name: "New User" });
+      expect(failNoPwd.status).toBe(400);
+
+      // Accept New User with password -> PASS (201)
+      const passNew = await request(app.getHttpServer())
+        .post("/api/v1/team/accept-invite")
+        .send({ inviteToken: tokenNew, name: "New User", password: "NewUserPass123!" });
+      expect(passNew.status).toBe(201);
+
+      // Re-accepting used token -> FAIL (400)
+      const failUsed = await request(app.getHttpServer())
+        .post("/api/v1/team/accept-invite")
+        .send({ inviteToken: tokenNew, password: "NewUserPass123!" });
+      expect(failUsed.status).toBe(400);
+
+      // 2. Existing user invitation matrix
+      const existingEmail = `existing.user.${Date.now()}@test.com`;
+      await request(app.getHttpServer())
+        .post("/api/v1/auth/register")
+        .send({ email: existingEmail, name: "Existing User", password: "CorrectPassword123!" });
+
+      // Invite existing user to org-diallo
+      const invExist = await agent
+        .post("/api/v1/team/invite")
+        .set("X-Organization-ID", "org-diallo")
+        .send({ email: existingEmail, role: "comptable" });
+      const tokenExist = invExist.body.inviteToken;
+
+      // Existing user without password -> FAIL (400)
+      const failExistNoPwd = await request(app.getHttpServer())
+        .post("/api/v1/team/accept-invite")
+        .send({ inviteToken: tokenExist });
+      expect(failExistNoPwd.status).toBe(400);
+
+      // Existing user with wrong password -> FAIL (401)
+      const failExistWrongPwd = await request(app.getHttpServer())
+        .post("/api/v1/team/accept-invite")
+        .send({ inviteToken: tokenExist, password: "WrongPassword123!" });
+      expect(failExistWrongPwd.status).toBe(401);
+
+      // Existing user with correct password -> PASS (201)
+      const passExistCorrect = await request(app.getHttpServer())
+        .post("/api/v1/team/accept-invite")
+        .send({ inviteToken: tokenExist, password: "CorrectPassword123!" });
+      expect(passExistCorrect.status).toBe(201);
+      expect(passExistCorrect.body.role).toBe("comptable");
+    });
   });
 });

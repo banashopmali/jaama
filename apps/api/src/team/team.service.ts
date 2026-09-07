@@ -174,11 +174,15 @@ export class TeamService {
           },
         });
       } else {
-        if (dto.password && user.credential) {
-          const valid = await verifyPassword(dto.password, user.credential.passwordHash);
-          if (!valid) {
-            throw new UnauthorizedException("Mot de passe incorrect pour le compte utilisateur existant.");
-          }
+        if (!user.credential) {
+          throw new UnauthorizedException("Compte existant sans identifiants valides.");
+        }
+        if (!dto.password || typeof dto.password !== "string" || !dto.password.trim()) {
+          throw new BadRequestException("Mot de passe requis pour valider l'accès au compte existant.");
+        }
+        const valid = await verifyPassword(dto.password, user.credential.passwordHash);
+        if (!valid) {
+          throw new UnauthorizedException("Mot de passe incorrect pour le compte utilisateur existant.");
         }
       }
 

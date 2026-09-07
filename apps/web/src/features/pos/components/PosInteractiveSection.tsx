@@ -114,7 +114,6 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
         } else if (apiContext || config) {
           const effectiveApiContext = apiContext || {
             apiUrl: config!.apiUrl,
-            sessionToken: config!.sessionToken,
             organizationId: config!.organizationId,
           };
 

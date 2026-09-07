@@ -28,8 +28,29 @@ export class AuthController {
   }
 
   @Post("register")
-  public async register(@Body() body: RegisterDto) {
-    return this.service.register(body);
+  public async register(@Body() body: RegisterDto, @Res({ passthrough: true }) res: any) {
+    const result = await this.service.register(body);
+    const token = result.session.token;
+
+    res.cookie("jaama_session", token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: "lax",
+      path: "/",
+      maxAge: 24 * 60 * 60 * 1000,
+    });
+
+    return {
+      user: {
+        id: result.user.id,
+        email: result.user.email,
+        name: result.user.name,
+      },
+      session: {
+        id: result.session.id,
+        expiresAt: result.session.expiresAt,
+      },
+    };
   }
 
   @Post("login")
@@ -45,7 +66,17 @@ export class AuthController {
       maxAge: 24 * 60 * 60 * 1000,
     });
 
-    return result;
+    return {
+      user: {
+        id: result.user.id,
+        email: result.user.email,
+        name: result.user.name,
+      },
+      session: {
+        id: result.session.id,
+        expiresAt: result.session.expiresAt,
+      },
+    };
   }
 
   @Post("logout")
@@ -79,33 +110,60 @@ export class AuthController {
 
     const orgId = (req.headers["x-organization-id"] || req.query?.organizationId) as string | undefined;
 
+    let targetMembership: any = null;
     if (orgId) {
-      const membership = await membershipRepo.findByOrganizationAndUser(orgId, ctx.user.id);
-      if (membership && membership.status === "active") {
-        return {
-          ...ctx,
-          organizationId: orgId,
-          role: membership.role,
-          permissions: getRolePermissions(membership.role as any),
-        };
+      const m = await membershipRepo.findByOrganizationAndUser(orgId, ctx.user.id);
+      if (m && m.status === "active") {
+        targetMembership = m;
       }
     }
 
-    const activeMemberships = await defaultPrisma.membership.findMany({
-      where: { userId: ctx.user.id, status: "active" },
-      take: 1,
-    });
+    if (!targetMembership) {
+      const activeMemberships = await defaultPrisma.membership.findMany({
+        where: { userId: ctx.user.id, status: "active" },
+        orderBy: { createdAt: "asc" },
+        take: 1,
+      });
+      if (activeMemberships.length > 0) {
+        targetMembership = activeMemberships[0];
+      }
+    }
 
-    if (activeMemberships.length > 0) {
-      const activeMem = activeMemberships[0];
+    if (!targetMembership) {
       return {
-        ...ctx,
-        organizationId: activeMem.organizationId,
-        role: activeMem.role,
-        permissions: getRolePermissions(activeMem.role as any),
+        user: {
+          id: ctx.user.id,
+          email: ctx.user.email,
+          name: ctx.user.name,
+        },
+        organization: null,
+        organizationId: null,
+        role: null,
+        permissions: [],
       };
     }
 
-    return ctx;
+    const organization = await defaultPrisma.organization.findUnique({
+      where: { id: targetMembership.organizationId },
+    });
+
+    return {
+      user: {
+        id: ctx.user.id,
+        email: ctx.user.email,
+        name: ctx.user.name,
+      },
+      organization: organization
+        ? {
+            id: organization.id,
+            name: organization.name,
+            slug: organization.slug,
+            status: organization.status,
+          }
+        : null,
+      organizationId: targetMembership.organizationId,
+      role: targetMembership.role,
+      permissions: getRolePermissions(targetMembership.role as any),
+    };
   }
 }

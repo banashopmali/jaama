@@ -11,7 +11,6 @@ export function PosClientContainer({ posState = "ready" }: { posState?: PosState
   const apiContext = config
     ? {
         apiUrl: config.apiUrl,
-        sessionToken: config.sessionToken,
         organizationId: config.organizationId,
       }
     : undefined;

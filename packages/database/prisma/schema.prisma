@@ -64,6 +64,12 @@ enum IdempotencyStatus {
   COMPLETED
 }
 
+enum ImportBatchStatus {
+  PREVIEWED
+  COMPLETED
+  EXPIRED
+}
+
 enum QuoteStatus {
   DRAFT
   SENT
@@ -104,6 +110,7 @@ model User {
   createdExpenses   Expense[]      @relation("ExpenseCreator")
   createdReceivings Receiving[]    @relation("ReceivingCreator")
   notifications     Notification[]
+  importBatches     ImportBatch[]  @relation("ActorImportBatches")
 }
 
 model Credential {
@@ -157,6 +164,7 @@ model Organization {
   outboxEvents       OutboxEvent[]
   idempotencyRecords IdempotencyRecord[]
   invitations        OrganizationInvitation[]
+  importBatches      ImportBatch[]
 }
 
 model OrganizationInvitation {
@@ -596,3 +604,24 @@ model IdempotencyRecord {
 
   @@unique([organizationId, operation, idempotencyKey])
 }
+
+model ImportBatch {
+  id                    String            @id @default(uuid())
+  organizationId        String
+  organization          Organization      @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  actorId               String
+  actor                 User              @relation("ActorImportBatches", fields: [actorId], references: [id], onDelete: Cascade)
+  entityType            String
+  originalFileName      String
+  contentHash           String
+  normalizedPayloadJson String
+  validationErrorsJson  String            @default("[]")
+  status                ImportBatchStatus @default(PREVIEWED)
+  expiresAt             DateTime
+  createdAt             DateTime          @default(now())
+  completedAt           DateTime?
+
+  @@unique([organizationId, id])
+  @@index([organizationId, entityType])
+}
+

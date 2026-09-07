@@ -33,8 +33,8 @@ export const DashboardView: React.FC<DashboardViewProps> = ({
     stateMode === "partial-error" ? "Impossible de charger les données du tableau de bord." : null
   );
 
-  const userFirstName = config?.user?.name ? config.user.name.split(" ")[0] : snapshot?.userFirstName || "Hamidou";
-  const businessName = snapshot?.businessName || config?.organizationId || "Diallo Commerce";
+  const userFirstName = config?.user?.name ? config.user.name.split(" ")[0] : (snapshot?.userFirstName || "Utilisateur");
+  const businessName = config?.organization?.name || snapshot?.businessName || "Mon Entreprise";
 
   useEffect(() => {
     if (stateMode) {

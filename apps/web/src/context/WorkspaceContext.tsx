@@ -42,9 +42,10 @@ export function WorkspaceProvider({
         const data = await res.json();
         setConfig({
           apiUrl,
-          sessionToken: data.sessionToken,
           organizationId: data.organizationId,
+          organization: data.organization,
           user: data.user,
+          role: data.role,
           permissions: data.permissions || [],
         });
       } else {

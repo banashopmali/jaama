@@ -4,10 +4,8 @@
 - **Branch**: `feat/jaa-s1-01-20-core-business-os`
 - **Integration PR**: `#8`
 - **Target Release Tag**: `v0.2.0-core`
-- **Certified HEAD SHA**: `cf696f60cd2121ea509f85db511ae3381da89abd`
-- **GitHub Actions Run ID**: `32313776506`
-- **CI Conclusion**: **`success`**
-- **Status**: **SPRINT 1 CORE BUSINESS OS CERTIFIED — PASS**
+- **Certification Evidence**: Exact-head GitHub CI evidence recorded in PR #8
+- **Status**: **RELEASE CANDIDATE — READY FOR EXACT-HEAD CI CERTIFICATION**
 
 ---
 

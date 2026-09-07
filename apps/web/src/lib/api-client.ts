@@ -1,13 +1,19 @@
 export interface WorkspaceConfig {
   apiUrl: string;
-  sessionToken: string;
   organizationId: string;
+  organization?: {
+    id: string;
+    name: string;
+    slug?: string;
+    status?: string;
+  };
   user?: {
     id: string;
     email: string;
     name: string;
-    role: string;
+    role?: string;
   };
+  role?: string;
   permissions?: string[];
 }
 
@@ -28,9 +34,9 @@ export async function workspaceFetch<T = any>(
   config: WorkspaceConfig,
   options: RequestInit = {}
 ): Promise<T> {
-  const { apiUrl, sessionToken, organizationId } = config;
+  const { apiUrl, organizationId } = config;
 
-  if (!apiUrl || !sessionToken || !organizationId) {
+  if (!apiUrl || !organizationId) {
     throw new ApiClientError(
       "Contexte d'espace de travail non initialisé. Authentification requise.",
       401
@@ -39,10 +45,17 @@ export async function workspaceFetch<T = any>(
 
   const url = path.startsWith("http") ? path : `${apiUrl}${path.startsWith("/") ? "" : "/"}${path}`;
 
+  const isFormData = typeof FormData !== "undefined" && options.body instanceof FormData;
+  const baseHeaders: Record<string, string> = {};
+  if (organizationId) {
+    baseHeaders["X-Organization-ID"] = organizationId;
+  }
+  if (!isFormData) {
+    baseHeaders["Content-Type"] = "application/json";
+  }
+
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
-    "Authorization": `Bearer ${sessionToken}`,
-    "X-Organization-ID": organizationId,
+    ...baseHeaders,
     ...(options.headers as Record<string, string> || {}),
   };
 
@@ -50,9 +63,10 @@ export async function workspaceFetch<T = any>(
   try {
     response = await fetch(url, {
       ...options,
+      credentials: "include",
       headers,
     });
-  } catch (err: any) {
+  } catch {
     throw new ApiClientError(
       "Impossible d'atteindre le serveur JAAMA. Vérifiez votre connexion réseau.",
       503
@@ -68,7 +82,6 @@ export async function workspaceFetch<T = any>(
     throw new ApiClientError(message, response.status, errorBody);
   }
 
-  // Handle empty 204 No Content
   if (response.status === 204) {
     return {} as T;
   }

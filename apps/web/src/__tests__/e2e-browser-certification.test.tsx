@@ -17,7 +17,6 @@ vi.mock("next/navigation", () => ({
 
 const mockTestWorkspaceConfig = {
   apiUrl: "http://localhost:3001",
-  sessionToken: "test-certified-session-token",
   organizationId: "org-diallo",
   user: {
     id: "user-hamidou",

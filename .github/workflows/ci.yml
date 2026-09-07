@@ -1,4 +1,4 @@
-name: Monorepo CI Pipeline
+name: Sprint 1 Monorepo & Browser Certification CI Pipeline
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   validate:
-    name: Validate Monorepo
+    name: 1. Monorepo Quality Gates & HTTP E2E
     runs-on: ubuntu-latest
 
     services:
@@ -63,8 +63,76 @@ jobs:
       - name: Run Typecheck
         run: pnpm typecheck
 
-      - name: Run Tests
+      - name: Run Unit & HTTP E2E Tests
         run: pnpm test
 
-      - name: Run Build
+      - name: Run Monorepo Build
         run: pnpm build
+
+  e2e-browser:
+    name: 2. Real Browser Playwright Certification
+    needs: validate
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: jaama_user
+          POSTGRES_PASSWORD: jaama_pass
+          POSTGRES_DB: jaama_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: "postgresql://jaama_user:jaama_pass@localhost:5432/jaama_db?schema=public"
+      PORT: "3001"
+      NEXT_PUBLIC_API_URL: "http://127.0.0.1:3001"
+      NODE_ENV: "production"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pnpm
+        run: npm install -g pnpm@11.7.0
+
+      - name: Approve build scripts
+        run: pnpm approve-builds --all
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm --filter @jaama/database db:generate
+
+      - name: Run Prisma Database Migrations
+        run: pnpm --filter @jaama/database db:migrate:deploy
+
+      - name: Seed Dedicated E2E Database
+        run: pnpm --filter @jaama/database db:seed
+
+      - name: Install Playwright Chromium Browser
+        run: pnpm --filter @jaama/web exec playwright install chromium --with-deps
+
+      - name: Build API and Web Applications
+        run: pnpm build
+
+      - name: Start API Server & Web App in Background
+        run: |
+          pnpm --filter @jaama/api start &
+          pnpm --filter @jaama/web start &
+          sleep 10
+
+      - name: Run Playwright Real Browser E2E Suite
+        run: pnpm --filter @jaama/web exec playwright test

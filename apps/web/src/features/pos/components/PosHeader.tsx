@@ -10,7 +10,7 @@ export interface PosHeaderProps {
 }
 
 export const PosHeader: React.FC<PosHeaderProps> = ({
-  businessName = "Diallo Commerce",
+  businessName = "Mon Entreprise",
   onResetCart,
   hasCartItems = false,
 }) => {
