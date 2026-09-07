@@ -43,7 +43,7 @@ test.describe("JAAMA Production Core Business OS Browser E2E Certification (Sect
     }
 
     // Proceed to Checkout
-    await page.click("button:has-text('Passer à la caisse')");
+    await page.click("button:has-text('Continuer vers le paiement')");
 
     // Select Wave payment & input 3000 FCFA
     await page.click("button:has-text('Wave')");
@@ -51,10 +51,10 @@ test.describe("JAAMA Production Core Business OS Browser E2E Certification (Sect
     await amountInput.fill("3000");
 
     // Confirm Sale
-    await page.click("button:has-text('Valider la vente')");
+    await page.click("button:has-text('Confirmer la vente')");
 
     // 6. Verify Real Sale Success Screen
-    await expect(page.locator("body")).toContainText("Vente enregistrée avec succès");
+    await expect(page.locator("body")).toContainText("Vente enregistrée");
     await expect(page.locator("body")).toContainText("5 000 FCFA");
 
     // 7. Navigate to Sales List & Verify Persisted Sale
