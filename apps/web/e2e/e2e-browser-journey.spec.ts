@@ -36,8 +36,7 @@ test.describe("JAAMA Production Core Business OS Browser E2E Certification (Sect
     await expect(page.locator("body")).toContainText("Nouvelle vente");
 
     // Click product add button to add to cart (10 times)
-    const productCard = page.locator("div").filter({ hasText: "Coca-Cola 50cl" }).first();
-    const addButton = productCard.locator("button").first();
+    const addButton = page.getByRole("button", { name: "Ajouter 1 Coca-Cola 50cl" });
     await expect(addButton).toBeVisible();
     for (let i = 0; i < 10; i++) {
       await addButton.click();
