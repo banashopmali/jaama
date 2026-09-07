@@ -132,7 +132,7 @@ jobs:
       - name: Start API and Web Services
         run: |
           mkdir -p /tmp/jaama-logs
-          PORT=3001 NODE_ENV=test pnpm --filter @jaama/api start > /tmp/jaama-logs/api.log 2>&1 &
+          PORT=3001 NODE_ENV=test pnpm --filter @jaama/api dev > /tmp/jaama-logs/api.log 2>&1 &
           echo "API_PID=$!" >> $GITHUB_ENV
           NODE_ENV=production pnpm --filter @jaama/web exec next start -p 3000 > /tmp/jaama-logs/web.log 2>&1 &
           echo "WEB_PID=$!" >> $GITHUB_ENV
