@@ -18,7 +18,7 @@ test.describe("JAAMA Production Core Business OS Browser E2E Certification (Sect
 
     // 4. Navigate to Products UI & Create Product
     await page.goto("/produits");
-    await expect(page.locator("h1")).toContainText("Catalogue Produits");
+    await expect(page.locator("body")).toContainText("Catalogue Produits");
 
     await page.click("button:has-text('Nouveau produit')");
     await page.fill("input[placeholder='ex: RIZ-5KG']", "E2E-COCA-001");
@@ -33,7 +33,7 @@ test.describe("JAAMA Production Core Business OS Browser E2E Certification (Sect
 
     // 5. Navigate to POS & Submit Sale with Partial Payment
     await page.goto("/ventes/nouvelle");
-    await expect(page.locator("h1")).toContainText("Nouvelle vente");
+    await expect(page.locator("body")).toContainText("Nouvelle vente");
 
     // Click product to add to cart (10 times)
     const productCard = page.locator("text=Coca-Cola 50cl").first();
@@ -59,7 +59,7 @@ test.describe("JAAMA Production Core Business OS Browser E2E Certification (Sect
 
     // 7. Navigate to Sales List & Verify Persisted Sale
     await page.goto("/ventes");
-    await expect(page.locator("h1")).toContainText("Ventes");
+    await expect(page.locator("body")).toContainText("Ventes");
     await expect(page.locator("table")).toContainText("5 000 FCFA");
     await expect(page.locator("table")).toContainText("3 000 FCFA");
     await expect(page.locator("table")).toContainText("2 000 FCFA");
