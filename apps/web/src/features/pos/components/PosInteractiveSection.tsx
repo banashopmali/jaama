@@ -62,7 +62,7 @@ export const PosInteractiveSection: React.FC<PosInteractiveSectionProps> = ({
           category: p.category,
           priceAmount: p.unitPriceMinor,
           currency: "FCFA",
-          stockCount: p.inventoryBalance ? p.inventoryBalance.availableQuantity : 0,
+          stockCount: p.stock?.available ?? p.inventoryBalances?.[0]?.availableQuantity ?? p.inventoryBalance?.availableQuantity ?? 0,
         }));
         setProducts(mapped);
       } catch (err: any) {

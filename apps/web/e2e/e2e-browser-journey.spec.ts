@@ -25,7 +25,7 @@ test.describe("JAAMA Production Core Business OS Browser E2E Certification (Sect
     await page.fill("input[placeholder='ex: Riz Parfumé 5kg']", "Coca-Cola 50cl");
     await page.selectOption("select", "Boissons");
     await page.fill("input[placeholder='6500']", "500");
-    await page.fill("input[value='10']", "100");
+    await page.locator("form input[type='number']").last().fill("100");
 
     await page.click("button:has-text('Enregistrer le produit')");
     await expect(page.locator("table")).toContainText("Coca-Cola 50cl");

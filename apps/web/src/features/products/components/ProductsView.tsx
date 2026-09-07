@@ -59,7 +59,7 @@ export const ProductsView: React.FC = () => {
         status: p.status || "active",
         lowStockThreshold: p.lowStockThreshold,
         stock: {
-          available: p.inventoryBalance ? p.inventoryBalance.availableQuantity : 0,
+          available: p.stock?.available ?? p.inventoryBalances?.[0]?.availableQuantity ?? p.inventoryBalance?.availableQuantity ?? 0,
           reserved: 0,
         },
       }));
