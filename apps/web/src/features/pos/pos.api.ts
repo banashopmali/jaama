@@ -64,8 +64,11 @@ export function buildCreateSaleApiPayload(
     }
   }
 
+  const effectiveCustomerId =
+    customerId && customerId !== "cust-0" && customerId !== "walk_in" ? customerId : null;
+
   return {
-    customerId: customerId || null,
+    customerId: effectiveCustomerId,
     lines,
     discountMinor,
     payments,
