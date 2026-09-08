@@ -8,6 +8,8 @@ import {
   WebhookParseResult,
   PaymentProviderType,
   PaymentDomainError,
+  PaymentAttemptStatus,
+  assertSafeIntegerAmount,
 } from "../provider.interface";
 
 export class MockPaymentProvider implements PaymentProvider {
@@ -18,16 +20,21 @@ export class MockPaymentProvider implements PaymentProvider {
     intent: PaymentIntent,
     attempt: PaymentAttempt
   ): Promise<ProviderAttemptResult> {
-    if (attempt.amountMinor <= 0) {
-      throw new PaymentDomainError("AMOUNT_MISMATCH", "Attempt amount must be positive", {
-        amountMinor: attempt.amountMinor,
-      });
+    assertSafeIntegerAmount(attempt.amountMinor, "attempt.amountMinor", 1);
+
+    if (process.env.NODE_ENV === "production") {
+      throw new PaymentDomainError(
+        "PROVIDER_UNAVAILABLE",
+        "Mock payment provider is strictly forbidden in production"
+      );
     }
+
+    const providerReference = `mock_tx_${attempt.id}`;
 
     // Deterministic simulation based on idempotencyKey or metadata
     if (attempt.idempotencyKey.includes("fail") || attempt.errorMessage === "SIMULATE_FAILURE") {
       return {
-        success: false,
+        state: "FAILED",
         providerReference: `mock_fail_${attempt.id}`,
         providerStatus: "FAILED",
         errorCode: "INSUFFICIENT_FUNDS",
@@ -36,72 +43,155 @@ export class MockPaymentProvider implements PaymentProvider {
       };
     }
 
-    const providerReference = `mock_tx_${attempt.id}`;
+    // Deterministic integer fee calculation (1% floor, safe integer)
+    const feeMinor = Math.floor(attempt.amountMinor / 100);
+    const netMinor = attempt.amountMinor - feeMinor;
+
+    // Explicitly allow immediate success ONLY if configured for sync/instant test cases
+    if (
+      attempt.idempotencyKey.includes("instant_succeed") ||
+      attempt.idempotencyKey.includes("sync_succeed")
+    ) {
+      return {
+        state: "SUCCEEDED",
+        providerReference,
+        providerStatus: "CONFIRMED",
+        paymentUrl: `https://pay.mock.jaama.test/checkout/${attempt.id}`,
+        feeMinor,
+        netMinor,
+        rawResponse: {
+          simulated: true,
+          outcome: "CONFIRMED",
+          reference: providerReference,
+          amountMinor: attempt.amountMinor,
+          currencyCode: attempt.currencyCode,
+          feeMinor,
+          netMinor,
+        },
+      };
+    }
+
+    // Standard asynchronous provider flow: request accepted != payment confirmed
     return {
-      success: true,
+      state: "PENDING_PROVIDER",
       providerReference,
-      providerStatus: "COMPLETED",
+      providerStatus: "PENDING",
       paymentUrl: `https://pay.mock.jaama.test/checkout/${attempt.id}`,
+      feeMinor,
+      netMinor,
       rawResponse: {
         simulated: true,
-        outcome: "COMPLETED",
+        outcome: "PENDING",
         reference: providerReference,
         amountMinor: attempt.amountMinor,
         currencyCode: attempt.currencyCode,
-        feeMinor: Math.round(attempt.amountMinor * 0.01), // 1% simulated fee
+        feeMinor,
+        netMinor,
       },
     };
   }
 
   public async verifyWebhookSignature(
     headers: Record<string, string | string[] | undefined>,
-    rawBody: string | Buffer,
+    rawBody: string | Uint8Array,
     webhookSecret: string
   ): Promise<boolean> {
+    if (!webhookSecret || typeof webhookSecret !== "string" || webhookSecret.trim() === "") {
+      return false; // Missing webhook secret => FAIL CLOSED
+    }
+
     const signature = headers["x-mock-signature"] || headers["x-jaama-signature"];
     if (!signature || typeof signature !== "string") {
       return false;
     }
 
-    if (signature === "valid_mock_signature" || signature === "test-secret-signature") {
-      return true;
-    }
-
-    // HMAC-SHA256 signature check if secret is configured
     try {
-      const bodyString = typeof rawBody === "string" ? rawBody : rawBody.toString("utf8");
-      const expectedSignature = crypto
+      const bodyBuffer =
+        typeof rawBody === "string"
+          ? Buffer.from(rawBody, "utf8")
+          : Buffer.from(rawBody.buffer, rawBody.byteOffset, rawBody.byteLength);
+
+      const expectedSignatureHex = crypto
         .createHmac("sha256", webhookSecret)
-        .update(bodyString)
+        .update(bodyBuffer)
         .digest("hex");
-      return crypto.timingSafeEqual(
-        Buffer.from(signature),
-        Buffer.from(expectedSignature)
-      );
+
+      const sigBuf = Buffer.from(signature, "hex");
+      const expectedBuf = Buffer.from(expectedSignatureHex, "hex");
+
+      if (sigBuf.length !== expectedBuf.length || sigBuf.length === 0) {
+        return false;
+      }
+
+      return crypto.timingSafeEqual(sigBuf, expectedBuf);
     } catch {
       return false;
     }
   }
 
   public parseWebhookEvent(payload: Record<string, any>): WebhookParseResult {
-    const eventId = String(payload.id || payload.eventId || `evt_${Date.now()}`);
-    const eventType = String(payload.type || payload.eventType || "payment.succeeded");
+    const rawEventId = payload.id ?? payload.eventId;
+    if (!rawEventId || typeof rawEventId !== "string" || rawEventId.trim() === "") {
+      throw new PaymentDomainError(
+        "PROVIDER_ERROR",
+        "Malformed webhook: missing or invalid eventId"
+      );
+    }
+    const eventId = String(rawEventId).trim();
+    const eventType = String(payload.type || payload.eventType || "payment.status_update");
     const data = payload.data || payload;
 
-    const providerReference = String(data.providerReference || data.reference || data.transactionId || "");
-    const rawStatus = String(data.status || "SUCCEEDED").toUpperCase();
-    
-    let status: "SUCCEEDED" | "FAILED" | "PROCESSING" = "PROCESSING";
-    if (rawStatus === "SUCCEEDED" || rawStatus === "SUCCESS" || rawStatus === "COMPLETED") {
+    const rawReference = data.providerReference || data.reference || data.transactionId;
+    if (!rawReference || typeof rawReference !== "string" || rawReference.trim() === "") {
+      throw new PaymentDomainError(
+        "PROVIDER_ERROR",
+        "Malformed webhook: missing providerReference"
+      );
+    }
+    const providerReference = String(rawReference).trim();
+
+    const rawStatus = String(data.status || "PROCESSING").toUpperCase();
+    let status: PaymentAttemptStatus = "PROCESSING";
+    if (
+      rawStatus === "SUCCEEDED" ||
+      rawStatus === "SUCCESS" ||
+      rawStatus === "COMPLETED" ||
+      rawStatus === "CONFIRMED"
+    ) {
       status = "SUCCEEDED";
-    } else if (rawStatus === "FAILED" || rawStatus === "DECLINED" || rawStatus === "CANCELLED") {
+    } else if (
+      rawStatus === "FAILED" ||
+      rawStatus === "DECLINED" ||
+      rawStatus === "REJECTED"
+    ) {
       status = "FAILED";
+    } else if (rawStatus === "CANCELLED" || rawStatus === "CANCELED") {
+      status = "CANCELLED";
+    } else if (rawStatus === "EXPIRED") {
+      status = "EXPIRED";
+    } else if (rawStatus === "PENDING" || rawStatus === "PENDING_PROVIDER") {
+      status = "PENDING_PROVIDER";
+    } else {
+      status = "PROCESSING";
     }
 
-    const amountMinor = Number(data.amountMinor || data.amount || 0);
+    const amountMinor = data.amountMinor ?? data.amount;
+    assertSafeIntegerAmount(amountMinor, "amountMinor", 1);
+
+    const feeMinor = data.feeMinor ?? 0;
+    assertSafeIntegerAmount(feeMinor, "feeMinor", 0, amountMinor);
+
+    const netMinor = data.netMinor ?? amountMinor - feeMinor;
+    assertSafeIntegerAmount(netMinor, "netMinor", 0, amountMinor);
+
+    if (feeMinor + netMinor !== amountMinor) {
+      throw new PaymentDomainError(
+        "AMOUNT_MISMATCH",
+        `Webhook financial invariant violated: feeMinor (${feeMinor}) + netMinor (${netMinor}) != amountMinor (${amountMinor})`
+      );
+    }
+
     const currencyCode = data.currencyCode || data.currency || "XOF";
-    const feeMinor = Number(data.feeMinor || 0);
-    const netMinor = amountMinor - feeMinor;
 
     return {
       eventId,
@@ -122,7 +212,7 @@ export class MockPaymentProvider implements PaymentProvider {
   ): Promise<ProviderAttemptResult> {
     if (providerReference.includes("fail")) {
       return {
-        success: false,
+        state: "FAILED",
         providerReference,
         providerStatus: "FAILED",
         errorCode: "TRANSACTION_FAILED",
@@ -131,7 +221,7 @@ export class MockPaymentProvider implements PaymentProvider {
     }
 
     return {
-      success: true,
+      state: "SUCCEEDED",
       providerReference,
       providerStatus: "COMPLETED",
       rawResponse: { status: "COMPLETED", providerReference },

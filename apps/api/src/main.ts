@@ -7,7 +7,7 @@ import { logger } from "@jaama/observability";
 
 async function bootstrap() {
   const config = validateEnvironment();
-  const app = await NestFactory.create(AppModule);
+  const app = await NestFactory.create(AppModule, { rawBody: true });
 
   // Security Headers & CORS
   app.use(helmet());

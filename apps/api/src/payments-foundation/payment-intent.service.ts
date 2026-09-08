@@ -1,3 +1,4 @@
+import * as crypto from "crypto";
 import { Injectable, Optional } from "@nestjs/common";
 import { prisma as defaultPrisma } from "@jaama/database";
 import {
@@ -11,7 +12,9 @@ import {
   PaymentIntent,
   PaymentAttempt,
   PaymentProviderType,
+  PaymentAttemptStatus,
   PaymentDomainError,
+  assertSafeIntegerAmount,
   assertValidPaymentIntentTransition,
   assertValidPaymentAttemptTransition,
 } from "./provider.interface";
@@ -36,6 +39,39 @@ export interface CreatePaymentAttemptDto {
   metadata?: Record<string, unknown>;
 }
 
+export function computeCanonicalAttemptHash(params: {
+  organizationId: string;
+  paymentIntentId: string;
+  provider: string;
+  amountMinor: number;
+  currencyCode: string;
+}): string {
+  const canonicalPayload = JSON.stringify({
+    amountMinor: params.amountMinor,
+    currencyCode: params.currencyCode,
+    organizationId: params.organizationId,
+    paymentIntentId: params.paymentIntentId,
+    provider: params.provider,
+  });
+  return crypto.createHash("sha256").update(canonicalPayload).digest("hex");
+}
+
+function mapProviderToPaymentMethod(provider: PaymentProviderType): "cash" | "wave" | "orange_money" | "bank_transfer" | "card" {
+  switch (provider) {
+    case "wave":
+      return "wave";
+    case "orange_money":
+      return "orange_money";
+    case "bank_transfer":
+      return "bank_transfer";
+    case "mock":
+    case "moov_money":
+    case "mtn_momo":
+    default:
+      return "cash";
+  }
+}
+
 @Injectable()
 export class PaymentIntentService {
   constructor(
@@ -49,11 +85,8 @@ export class PaymentIntentService {
   ): Promise<PaymentIntent> {
     const { organizationId } = userContext;
 
-    if (!dto.amountMinor || dto.amountMinor <= 0) {
-      throw new PaymentDomainError("AMOUNT_MISMATCH", "PaymentIntent amount must be strictly positive.", {
-        amountMinor: dto.amountMinor,
-      });
-    }
+    // Enforce safe integer money invariant
+    assertSafeIntegerAmount(dto.amountMinor, "amountMinor", 1);
 
     const currencyCode = dto.currencyCode || "XOF";
 
@@ -96,7 +129,7 @@ export class PaymentIntentService {
         data: {
           organizationId,
           reference,
-          amountMinor: Math.round(dto.amountMinor),
+          amountMinor: dto.amountMinor,
           currencyCode,
           status: "REQUIRES_PAYMENT",
           saleId: dto.saleId || null,
@@ -182,69 +215,126 @@ export class PaymentIntentService {
   ): Promise<{ attempt: PaymentAttempt; providerResult: any }> {
     const { organizationId } = userContext;
 
-    if (!dto.idempotencyKey) {
+    if (!dto.idempotencyKey || typeof dto.idempotencyKey !== "string" || dto.idempotencyKey.trim() === "") {
       throw new PaymentDomainError("IDEMPOTENCY_CONFLICT", "Idempotency key is required for payment attempts.");
     }
 
-    // Idempotency check: check if attempt already exists for this tenant & idempotencyKey
-    const existingAttempt = await this.prismaClient.paymentAttempt.findUnique({
-      where: {
-        organizationId_idempotencyKey: {
-          organizationId,
-          idempotencyKey: dto.idempotencyKey,
-        },
-      },
-      include: {
-        transactions: true,
-      },
-    });
-
-    if (existingAttempt) {
-      return {
-        attempt: existingAttempt as unknown as PaymentAttempt,
-        providerResult: { idempotentReplay: true, status: existingAttempt.status },
-      };
+    if (dto.amountMinor !== undefined) {
+      assertSafeIntegerAmount(dto.amountMinor, "amountMinor", 1);
     }
 
-    // Resolve provider and verify tenant configuration
+    // Resolve provider first to verify credentials and configuration
     const { provider, config } = await this.providerResolver.resolveProvider(organizationId, dto.provider);
 
-    // Concurrency-safe intent lookup & lock
-    const result = await this.prismaClient.$transaction(async (tx) => {
-      const intent = await tx.paymentIntent.findUnique({
+    // Concurrency-safe intent lookup & PostgreSQL row lock (SELECT ... FOR UPDATE)
+    const setupResult = await this.prismaClient.$transaction(async (tx) => {
+      // 1. First check if attempt already exists for this idempotency key
+      const existingAttempt = await tx.paymentAttempt.findUnique({
         where: {
-          organizationId_id: {
+          organizationId_idempotencyKey: {
             organizationId,
-            id: intentId,
+            idempotencyKey: dto.idempotencyKey,
           },
         },
       });
 
+      if (existingAttempt) {
+        if (existingAttempt.paymentIntentId !== intentId) {
+          throw new PaymentDomainError(
+            "IDEMPOTENCY_CONFLICT",
+            "Idempotency key has already been used with different request parameters.",
+            { existingIntentId: existingAttempt.paymentIntentId, requestedIntentId: intentId }
+          );
+        }
+
+        const requestedAttemptAmount = dto.amountMinor ?? existingAttempt.amountMinor;
+        const currentRequestHash = computeCanonicalAttemptHash({
+          organizationId,
+          paymentIntentId: intentId,
+          provider: dto.provider,
+          amountMinor: requestedAttemptAmount,
+          currencyCode: existingAttempt.currencyCode,
+        });
+
+        if (existingAttempt.requestHash && existingAttempt.requestHash !== currentRequestHash) {
+          throw new PaymentDomainError(
+            "IDEMPOTENCY_CONFLICT",
+            "Idempotency key has already been used with different request parameters.",
+            { existingIntentId: existingAttempt.paymentIntentId, requestedIntentId: intentId }
+          );
+        }
+
+        return {
+          isReplay: true,
+          attempt: existingAttempt as unknown as PaymentAttempt,
+          intent: null as any,
+          currentRequestHash,
+        };
+      }
+
+      // 2. Not a replay: lock PaymentIntent row
+      const lockedIntents: any[] = await tx.$queryRaw`
+        SELECT "id", "organizationId", "reference", "amountMinor", "currencyCode", "status", "saleId", "customerId", "expiresAt"
+        FROM "PaymentIntent"
+        WHERE "organizationId" = ${organizationId}
+          AND "id" = ${intentId}
+        FOR UPDATE
+      `;
+
+      const intent = lockedIntents[0];
       if (!intent) {
         throw new PaymentDomainError("TENANT_MISMATCH", `PaymentIntent '${intentId}' not found.`);
       }
 
       if (intent.status === "PAID") {
-        throw new PaymentDomainError("PAYMENT_INTENT_ALREADY_PAID", "PaymentIntent is already PAID.");
+        throw new PaymentDomainError("PAYMENT_INTENT_ALREADY_PAID", "PaymentIntent is already fully paid.");
       }
 
-      if (new Date() > intent.expiresAt) {
-        if (intent.status !== "EXPIRED") {
-          await tx.paymentIntent.update({
-            where: { organizationId_id: { organizationId, id: intent.id } },
-            data: { status: "EXPIRED" },
-          });
-        }
+      if (intent.status === "CANCELLED" || intent.status === "EXPIRED") {
+        throw new PaymentDomainError("INVALID_STATE_TRANSITION", `PaymentIntent is already ${intent.status}.`);
+      }
+
+      if (new Date() > new Date(intent.expiresAt)) {
+        await tx.paymentIntent.update({
+          where: { organizationId_id: { organizationId, id: intent.id } },
+          data: { status: "EXPIRED" },
+        });
         throw new PaymentDomainError("PAYMENT_INTENT_EXPIRED", "PaymentIntent has expired.");
       }
 
-      // Assert transition to PROCESSING
-      assertValidPaymentIntentTransition(intent.status as any, "PROCESSING");
+      // Calculate total succeeded amount to prevent overcollection
+      const succeededAttemptsResult: any[] = await tx.$queryRaw`
+        SELECT coalesce(sum("amountMinor"), 0) as "totalSucceededMinor"
+        FROM "PaymentAttempt"
+        WHERE "organizationId" = ${organizationId}
+          AND "paymentIntentId" = ${intent.id}
+          AND "status" = 'SUCCEEDED'
+      `;
+      const totalSucceededMinor = Number(succeededAttemptsResult[0]?.totalSucceededMinor ?? 0);
+      const remainingMinor = intent.amountMinor - totalSucceededMinor;
 
-      const attemptAmountMinor = dto.amountMinor || intent.amountMinor;
-      if (attemptAmountMinor <= 0) {
-        throw new PaymentDomainError("AMOUNT_MISMATCH", "Attempt amount must be positive.");
+      if (remainingMinor <= 0) {
+        throw new PaymentDomainError("PAYMENT_INTENT_ALREADY_PAID", "No remaining collectible balance on this PaymentIntent.");
       }
+
+      const requestedAttemptAmount = dto.amountMinor ?? remainingMinor;
+      assertSafeIntegerAmount(requestedAttemptAmount, "amountMinor", 1);
+
+      if (requestedAttemptAmount > remainingMinor) {
+        throw new PaymentDomainError(
+          "AMOUNT_MISMATCH",
+          `Requested attempt amount (${requestedAttemptAmount}) exceeds remaining collectible amount (${remainingMinor}).`
+        );
+      }
+
+      // Compute canonical request hash for strict idempotency binding
+      const currentRequestHash = computeCanonicalAttemptHash({
+        organizationId,
+        paymentIntentId: intent.id,
+        provider: dto.provider,
+        amountMinor: requestedAttemptAmount,
+        currencyCode: intent.currencyCode,
+      });
 
       // Create PaymentAttempt in CREATED status
       const attempt = await tx.paymentAttempt.create({
@@ -252,40 +342,74 @@ export class PaymentIntentService {
           organizationId,
           paymentIntentId: intent.id,
           provider: dto.provider,
-          amountMinor: attemptAmountMinor,
+          amountMinor: requestedAttemptAmount,
           currencyCode: intent.currencyCode,
           status: "CREATED",
           idempotencyKey: dto.idempotencyKey,
+          requestHash: currentRequestHash,
           metadataJson: JSON.stringify(dto.metadata || {}),
         },
       });
 
-      // Advance Intent to PROCESSING
-      await tx.paymentIntent.update({
-        where: { organizationId_id: { organizationId, id: intent.id } },
-        data: { status: "PROCESSING" },
-      });
+      // Advance Intent to PROCESSING if currently REQUIRES_PAYMENT
+      if (intent.status === "REQUIRES_PAYMENT") {
+        await tx.paymentIntent.update({
+          where: { organizationId_id: { organizationId, id: intent.id } },
+          data: { status: "PROCESSING" },
+        });
+      }
 
       // Advance Attempt to PENDING_PROVIDER
-      assertValidPaymentAttemptTransition(attempt.status as any, "PENDING_PROVIDER");
+      assertValidPaymentAttemptTransition(attempt.status, "PENDING_PROVIDER");
       const pendingAttempt = await tx.paymentAttempt.update({
         where: { organizationId_id: { organizationId, id: attempt.id } },
         data: { status: "PENDING_PROVIDER" },
       });
 
+      // Audit attempt creation
+      await tx.auditEvent.create({
+        data: {
+          organizationId,
+          actorId: userContext.actorId,
+          action: "PAYMENT_ATTEMPT_CREATED",
+          resourceType: "PaymentAttempt",
+          resourceId: pendingAttempt.id,
+          metadataJson: JSON.stringify({
+            paymentIntentId: intent.id,
+            provider: dto.provider,
+            amountMinor: requestedAttemptAmount,
+          }),
+        },
+      });
+
       return {
-        intent: intent as unknown as PaymentIntent,
+        isReplay: false,
         attempt: pendingAttempt as unknown as PaymentAttempt,
+        intent: intent as unknown as PaymentIntent,
+        currentRequestHash,
       };
     });
 
-    // Execute provider call outside database lock
+    if (setupResult.isReplay) {
+      return {
+        attempt: setupResult.attempt,
+        providerResult: {
+          state: setupResult.attempt.status,
+          providerReference: setupResult.attempt.providerReference,
+          idempotentReplay: true,
+        },
+      };
+    }
+
+    const { attempt, intent } = setupResult;
+
+    // Call external provider adapter
     let providerResult: any;
     try {
-      providerResult = await provider.createPaymentAttempt(config, result.intent, result.attempt);
+      providerResult = await provider.createPaymentAttempt(config, intent, attempt);
     } catch (err: any) {
       providerResult = {
-        success: false,
+        state: "FAILED",
         providerReference: `err_${Date.now()}`,
         providerStatus: "FAILED",
         errorCode: "PROVIDER_ERROR",
@@ -293,108 +417,67 @@ export class PaymentIntentService {
       };
     }
 
-    // Re-enter database transaction to finalize attempt and internal ledger
+    // Re-enter database transaction to advance attempt and update financial ledger
     const finalAttempt = await this.prismaClient.$transaction(async (tx) => {
-      const nextStatus = providerResult.success ? "SUCCEEDED" : "FAILED";
-      assertValidPaymentAttemptTransition(result.attempt.status, nextStatus);
-
-      const updatedAttempt = await tx.paymentAttempt.update({
-        where: {
-          organizationId_id: {
-            organizationId,
-            id: result.attempt.id,
-          },
-        },
-        data: {
-          status: nextStatus,
-          providerReference: providerResult.providerReference || null,
-          errorCode: providerResult.errorCode || null,
-          errorMessage: providerResult.errorMessage || null,
-        },
-      });
-
-      // Record ProviderTransaction (external transaction != internal payment)
-      if (providerResult.providerReference) {
-        const feeMinor = providerResult.rawResponse?.feeMinor || 0;
-        await tx.providerTransaction.create({
-          data: {
-            organizationId,
-            paymentAttemptId: updatedAttempt.id,
-            provider: dto.provider,
-            providerTransactionId: providerResult.providerReference,
-            statusRaw: providerResult.providerStatus || nextStatus,
-            feeMinor,
-            netMinor: updatedAttempt.amountMinor - feeMinor,
-            rawPayloadJson: JSON.stringify(providerResult.rawResponse || {}),
-          },
-        });
+      const normalizedState: PaymentAttemptStatus = providerResult.state;
+      if (attempt.status !== normalizedState) {
+        assertValidPaymentAttemptTransition(attempt.status, normalizedState);
       }
 
-      if (providerResult.success) {
-        // Evaluate PaymentIntent status
-        const allSucceededAttempts = await tx.paymentAttempt.findMany({
-          where: {
-            organizationId,
-            paymentIntentId: result.intent.id,
-            status: "SUCCEEDED",
-          },
-        });
+      let createdPaymentId: string | null = null;
 
-        const totalSucceededMinor = allSucceededAttempts.reduce(
-          (sum, a) => sum + a.amountMinor,
-          0
-        );
+      if (normalizedState === "SUCCEEDED") {
+        // Re-lock PaymentIntent row to guarantee no concurrent overcollection
+        const lockedIntentCheck: any[] = await tx.$queryRaw`
+          SELECT "id", "amountMinor"
+          FROM "PaymentIntent"
+          WHERE "organizationId" = ${organizationId}
+            AND "id" = ${intent.id}
+          FOR UPDATE
+        `;
 
-        const newIntentStatus =
-          totalSucceededMinor >= result.intent.amountMinor ? "PAID" : "PARTIALLY_PAID";
+        const succeededSoFar: any[] = await tx.$queryRaw`
+          SELECT coalesce(sum("amountMinor"), 0) as "totalSucceededMinor"
+          FROM "PaymentAttempt"
+          WHERE "organizationId" = ${organizationId}
+            AND "paymentIntentId" = ${intent.id}
+            AND "status" = 'SUCCEEDED'
+        `;
+        const currentConfirmedMinor = Number(succeededSoFar[0]?.totalSucceededMinor ?? 0);
 
-        assertValidPaymentIntentTransition("PROCESSING", newIntentStatus);
-
-        await tx.paymentIntent.update({
-          where: {
-            organizationId_id: {
-              organizationId,
-              id: result.intent.id,
-            },
-          },
-          data: { status: newIntentStatus },
-        });
+        if (currentConfirmedMinor + attempt.amountMinor > lockedIntentCheck[0].amountMinor) {
+          throw new PaymentDomainError(
+            "AMOUNT_MISMATCH",
+            `Concurrent confirmation would overcollect intent total: confirmed=${currentConfirmedMinor}, attempt=${attempt.amountMinor}, total=${lockedIntentCheck[0].amountMinor}`
+          );
+        }
 
         // DOMAIN INVARIANT: PAYMENT_ATTEMPT != PAYMENT & SALE != PAYMENT
-        // Create internal Payment record only when payment attempt succeeds on a linked Sale
-        if (result.intent.saleId) {
+        // Create internal Payment ledger row exactly once if linked to a Sale
+        if (intent.saleId) {
           const sale = await tx.sale.findUnique({
             where: {
               organizationId_id: {
                 organizationId,
-                id: result.intent.saleId,
+                id: intent.saleId,
               },
             },
             include: { payments: true },
           });
 
           if (sale) {
-            // Map provider to internal PaymentMethod
-            const methodMapping: Record<PaymentProviderType, any> = {
-              mock: "cash",
-              wave: "wave",
-              orange_money: "orange_money",
-              bank_transfer: "bank_transfer",
-              moov_money: "cash",
-              mtn_momo: "cash",
-            };
-
-            await tx.payment.create({
+            const internalPayment = await tx.payment.create({
               data: {
                 organizationId,
                 saleId: sale.id,
-                method: methodMapping[dto.provider] || "cash",
-                amountMinor: updatedAttempt.amountMinor,
+                method: mapProviderToPaymentMethod(dto.provider),
+                amountMinor: attempt.amountMinor,
                 status: "SUCCESS",
               },
             });
+            createdPaymentId = internalPayment.id;
 
-            // Re-fetch updated payments and recalculate Sale financial state
+            // Recalculate Sale financial state
             const updatedPayments = await tx.payment.findMany({
               where: { organizationId, saleId: sale.id },
             });
@@ -417,7 +500,55 @@ export class PaymentIntentService {
           }
         }
 
-        // Audit Event
+        // Update PaymentIntent status
+        const newTotalConfirmed = currentConfirmedMinor + attempt.amountMinor;
+        const newIntentStatus =
+          newTotalConfirmed >= lockedIntentCheck[0].amountMinor ? "PAID" : "PARTIALLY_PAID";
+
+        await tx.paymentIntent.update({
+          where: { organizationId_id: { organizationId, id: intent.id } },
+          data: { status: newIntentStatus },
+        });
+      }
+
+      // Update attempt status and link to internal payment (enforcing 1-to-1 unique linkage)
+      const updatedAttempt = await tx.paymentAttempt.update({
+        where: {
+          organizationId_id: {
+            organizationId,
+            id: attempt.id,
+          },
+        },
+        data: {
+          status: normalizedState,
+          paymentId: createdPaymentId,
+          providerReference: providerResult.providerReference || null,
+          errorCode: providerResult.errorCode || null,
+          errorMessage: providerResult.errorMessage || null,
+        },
+      });
+
+      // Record ProviderTransaction if provider returned a reference
+      if (providerResult.providerReference) {
+        const feeMinor = providerResult.feeMinor ?? 0;
+        const netMinor = providerResult.netMinor ?? (attempt.amountMinor - feeMinor);
+
+        await tx.providerTransaction.create({
+          data: {
+            organizationId,
+            paymentAttemptId: updatedAttempt.id,
+            provider: dto.provider,
+            providerTransactionId: providerResult.providerReference,
+            statusRaw: providerResult.providerStatus || normalizedState,
+            feeMinor,
+            netMinor,
+            rawPayloadJson: JSON.stringify(providerResult.rawResponse || {}),
+          },
+        });
+      }
+
+      // Emit Audit & Outbox events
+      if (normalizedState === "SUCCEEDED") {
         await tx.auditEvent.create({
           data: {
             organizationId,
@@ -426,15 +557,15 @@ export class PaymentIntentService {
             resourceType: "PaymentAttempt",
             resourceId: updatedAttempt.id,
             metadataJson: JSON.stringify({
-              paymentIntentId: result.intent.id,
+              paymentIntentId: intent.id,
               amountMinor: updatedAttempt.amountMinor,
               provider: dto.provider,
               providerReference: providerResult.providerReference,
+              paymentId: createdPaymentId,
             }),
           },
         });
 
-        // Outbox Event
         await tx.outboxEvent.create({
           data: {
             organizationId,
@@ -443,25 +574,26 @@ export class PaymentIntentService {
             aggregateId: updatedAttempt.id,
             payloadJson: JSON.stringify({
               attemptId: updatedAttempt.id,
-              intentId: result.intent.id,
+              intentId: intent.id,
               amountMinor: updatedAttempt.amountMinor,
               provider: dto.provider,
               providerReference: providerResult.providerReference,
+              paymentId: createdPaymentId,
             }),
           },
         });
       } else {
-        // Failed attempt audit
         await tx.auditEvent.create({
           data: {
             organizationId,
             actorId: userContext.actorId,
-            action: "PAYMENT_ATTEMPT_FAILED",
+            action: `PAYMENT_ATTEMPT_${normalizedState}`,
             resourceType: "PaymentAttempt",
             resourceId: updatedAttempt.id,
             metadataJson: JSON.stringify({
-              paymentIntentId: result.intent.id,
+              paymentIntentId: intent.id,
               provider: dto.provider,
+              status: normalizedState,
               errorCode: providerResult.errorCode,
             }),
           },

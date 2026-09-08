@@ -399,6 +399,7 @@ model Payment {
   recordedAt     DateTime            @default(now())
 
   reconciliationRecords ReconciliationRecord[]
+  paymentAttempt        PaymentAttempt?
 
   @@unique([organizationId, id])
   @@index([organizationId, saleId])
@@ -696,6 +697,7 @@ model PaymentProviderConfig {
   provider           PaymentProviderType
   isEnabled          Boolean             @default(true)
   isTestMode         Boolean             @default(true)
+  webhookEndpointKey String              @unique @default(uuid())
   apiKeyEncrypted    String?
   apiSecretEncrypted String?
   webhookSecret      String?
@@ -707,6 +709,7 @@ model PaymentProviderConfig {
   @@unique([organizationId, id])
   @@unique([organizationId, provider])
   @@index([organizationId, isEnabled])
+  @@index([provider, webhookEndpointKey])
 }
 
 model PaymentIntent {
@@ -746,6 +749,9 @@ model PaymentAttempt {
   currencyCode      String               @default("XOF")
   status            PaymentAttemptStatus @default(CREATED)
   idempotencyKey    String
+  requestHash       String?
+  paymentId         String?              @unique
+  payment           Payment?             @relation(fields: [organizationId, paymentId], references: [organizationId, id], onDelete: SetNull)
   providerReference String?
   errorCode         String?
   errorMessage      String?
@@ -757,6 +763,7 @@ model PaymentAttempt {
 
   @@unique([organizationId, id])
   @@unique([organizationId, idempotencyKey])
+  @@unique([organizationId, paymentId])
   @@index([organizationId, paymentIntentId])
   @@index([organizationId, provider, status])
   @@index([providerReference])

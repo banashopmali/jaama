@@ -18,6 +18,7 @@ import {
   isValidSettlementTransition,
   assertValidSettlementTransition,
   PaymentDomainError,
+  assertSafeIntegerAmount,
 } from "../index";
 
 describe("JAAMA Domain & Business Contracts (JAA-S0-07)", () => {
@@ -208,6 +209,15 @@ describe("JAAMA Domain & Business Contracts (JAA-S0-07)", () => {
       expect(err.code).toBe("AMOUNT_MISMATCH");
       expect(err.details).toEqual({ expected: 5000, actual: 4000 });
       expect(err.message).toContain("[AMOUNT_MISMATCH]");
+    });
+
+    it("validates safe integer money inputs with assertSafeIntegerAmount", () => {
+      expect(() => assertSafeIntegerAmount(5000, "amount")).not.toThrow();
+      expect(() => assertSafeIntegerAmount(0, "amount", 0)).not.toThrow();
+      expect(() => assertSafeIntegerAmount(100.5, "amount")).toThrow(PaymentDomainError);
+      expect(() => assertSafeIntegerAmount(-10, "amount", 0)).toThrow(PaymentDomainError);
+      expect(() => assertSafeIntegerAmount(1500, "amount", 0, 1000)).toThrow(PaymentDomainError);
+      expect(() => assertSafeIntegerAmount("5000", "amount")).toThrow(PaymentDomainError);
     });
   });
 });

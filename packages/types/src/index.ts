@@ -378,6 +378,7 @@ export interface PaymentProviderConfig {
   provider: PaymentProviderType;
   isEnabled: boolean;
   isTestMode: boolean;
+  webhookEndpointKey: string;
   apiKeyEncrypted?: string | null;
   apiSecretEncrypted?: string | null;
   webhookSecret?: string | null;
@@ -414,6 +415,8 @@ export interface PaymentAttempt {
   currencyCode: CurrencyCode;
   status: PaymentAttemptStatus;
   idempotencyKey: string;
+  requestHash?: string | null;
+  paymentId?: string | null;
   providerReference?: string | null;
   errorCode?: string | null;
   errorMessage?: string | null;
@@ -478,6 +481,36 @@ export interface WebhookEvent {
   processedAt?: Date | null;
   errorMessage?: string | null;
   createdAt: Date;
+}
+
+// Pure Financial Amount Validator
+export function assertSafeIntegerAmount(
+  value: unknown,
+  fieldName: string,
+  min: number = 0,
+  max?: number
+): asserts value is number {
+  if (typeof value !== "number" || !Number.isSafeInteger(value)) {
+    throw new PaymentDomainError(
+      "AMOUNT_MISMATCH",
+      `${fieldName} must be a safe integer, got ${value}`,
+      { fieldName, value }
+    );
+  }
+  if (value < min) {
+    throw new PaymentDomainError(
+      "AMOUNT_MISMATCH",
+      `${fieldName} must be at least ${min}, got ${value}`,
+      { fieldName, value, min }
+    );
+  }
+  if (max !== undefined && value > max) {
+    throw new PaymentDomainError(
+      "AMOUNT_MISMATCH",
+      `${fieldName} cannot exceed ${max}, got ${value}`,
+      { fieldName, value, max }
+    );
+  }
 }
 
 // State Machine Transition Rules & Pure Validators
@@ -571,11 +604,19 @@ export function assertValidSettlementTransition(
 }
 
 // Payment Provider Contract
+export type ProviderAttemptState =
+  | "PENDING_PROVIDER"
+  | "PROCESSING"
+  | "SUCCEEDED"
+  | "FAILED";
+
 export interface ProviderAttemptResult {
-  success: boolean;
+  state: ProviderAttemptState;
   providerReference: string;
   providerStatus: string;
   paymentUrl?: string;
+  feeMinor?: number;
+  netMinor?: number;
   rawResponse?: Record<string, unknown>;
   errorCode?: string;
   errorMessage?: string;
@@ -604,7 +645,7 @@ export interface PaymentProvider {
 
   verifyWebhookSignature(
     headers: Record<string, string | string[] | undefined>,
-    rawBody: string | Buffer,
+    rawBody: string | Uint8Array,
     webhookSecret: string
   ): Promise<boolean>;
 

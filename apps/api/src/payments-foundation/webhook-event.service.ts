@@ -9,33 +9,97 @@ import {
   PaymentProviderType,
   PaymentDomainError,
   assertValidPaymentAttemptTransition,
-  assertValidPaymentIntentTransition,
 } from "./provider.interface";
-import { PaymentProviderRegistry, PaymentProviderResolver } from "./provider-registry";
+import { PaymentProviderResolver } from "./provider-registry";
+
+function mapProviderToPaymentMethod(provider: PaymentProviderType): "cash" | "wave" | "orange_money" | "bank_transfer" | "card" {
+  switch (provider) {
+    case "wave":
+      return "wave";
+    case "orange_money":
+      return "orange_money";
+    case "bank_transfer":
+      return "bank_transfer";
+    case "mock":
+    case "moov_money":
+    case "mtn_momo":
+    default:
+      return "cash";
+  }
+}
 
 @Injectable()
 export class WebhookEventService {
   constructor(
-    private readonly providerRegistry: PaymentProviderRegistry,
     private readonly providerResolver: PaymentProviderResolver,
     @Optional() private readonly prismaClient = defaultPrisma
   ) {}
 
   public async handleWebhook(
     providerType: PaymentProviderType,
+    webhookEndpointKey: string,
     headers: Record<string, string | string[] | undefined>,
-    rawBody: string | Buffer,
+    rawBody: string | Uint8Array,
     payload: Record<string, any>
   ): Promise<{ status: string; eventId: string }> {
-    const provider = this.providerRegistry.get(providerType);
-    if (!provider) {
-      throw new PaymentDomainError("PROVIDER_UNAVAILABLE", `Provider '${providerType}' not supported.`);
+    // 1. Deterministic Tenant & Provider Config Resolution (NEVER trust payload.organizationId)
+    const { provider, config } = await this.providerResolver.resolveByWebhookEndpoint(
+      providerType,
+      webhookEndpointKey
+    );
+    const organizationId = config.organizationId;
+    const webhookSecret = config.webhookSecret;
+
+    if (!webhookSecret) {
+      throw new PaymentDomainError(
+        "UNAUTHORIZED_PROVIDER_ACTION",
+        "Provider webhook secret is not configured"
+      );
     }
 
+    // 2. Cryptographic Signature Verification using RAW request bytes
+    const signatureVerified = await provider.verifyWebhookSignature(
+      headers,
+      rawBody,
+      webhookSecret
+    );
+
+    if (!signatureVerified) {
+      // Record failed event for security audit
+      const rawEventId = payload.id ?? payload.eventId ?? `unverified_${Date.now()}`;
+      await this.prismaClient.webhookEvent.upsert({
+        where: {
+          provider_eventId: {
+            provider: providerType,
+            eventId: String(rawEventId),
+          },
+        },
+        create: {
+          organizationId,
+          provider: providerType,
+          eventId: String(rawEventId),
+          eventType: String(payload.type || payload.eventType || "unknown"),
+          payloadJson: JSON.stringify(payload),
+          headersJson: JSON.stringify(headers),
+          signatureVerified: false,
+          status: "FAILED",
+          errorMessage: "Invalid cryptographic signature on raw body",
+        },
+        update: {
+          signatureVerified: false,
+          status: "FAILED",
+          errorMessage: "Invalid cryptographic signature on raw body",
+        },
+      });
+
+      throw new PaymentDomainError("INVALID_SIGNATURE", "Webhook signature verification failed.");
+    }
+
+    // 3. Parse and strictly validate payload
     const parsedEvent = provider.parseWebhookEvent(payload);
     const eventId = parsedEvent.eventId;
 
-    // Idempotency check: check if event already recorded
+    // 4. Idempotency Check scoped to provider & tenant
     const existingEvent = await this.prismaClient.webhookEvent.findUnique({
       where: {
         provider_eventId: {
@@ -45,13 +109,22 @@ export class WebhookEventService {
       },
     });
 
-    if (existingEvent && existingEvent.status === "PROCESSED") {
-      return { status: "ALREADY_PROCESSED", eventId };
+    if (existingEvent) {
+      if (existingEvent.organizationId && existingEvent.organizationId !== organizationId) {
+        throw new PaymentDomainError(
+          "TENANT_MISMATCH",
+          "Cross-tenant webhook event collision detected."
+        );
+      }
+      if (existingEvent.status === "PROCESSED") {
+        return { status: "ALREADY_PROCESSED", eventId };
+      }
     }
 
-    // Locate matching PaymentAttempt by providerReference
-    let attempt = await this.prismaClient.paymentAttempt.findFirst({
+    // 5. Look up PaymentAttempt strictly within the verified tenant
+    const attempt = await this.prismaClient.paymentAttempt.findFirst({
       where: {
+        organizationId,
         provider: providerType,
         providerReference: parsedEvent.providerReference,
       },
@@ -60,69 +133,87 @@ export class WebhookEventService {
       },
     });
 
-    if (!attempt && parsedEvent.rawPayload?.attemptId) {
-      attempt = await this.prismaClient.paymentAttempt.findUnique({
-        where: { id: String(parsedEvent.rawPayload.attemptId) },
-        include: { paymentIntent: true },
-      });
-    }
-
-    const organizationId = attempt?.organizationId || payload.organizationId || null;
-
-    // Verify signature if organization resolved
-    let signatureVerified = false;
-    if (organizationId) {
-      try {
-        const { config } = await this.providerResolver.resolveProvider(organizationId, providerType);
-        const secret = config.webhookSecret || "mock_secret_default";
-        signatureVerified = await provider.verifyWebhookSignature(headers, rawBody, secret);
-      } catch {
-        signatureVerified = false;
-      }
-    } else if (providerType === "mock") {
-      signatureVerified = true;
-    }
-
-    if (!signatureVerified) {
+    if (!attempt) {
+      // Malformed or cross-tenant attempt reference
       await this.prismaClient.webhookEvent.upsert({
-        where: {
-          provider_eventId: {
-            provider: providerType,
-            eventId,
-          },
-        },
+        where: { provider_eventId: { provider: providerType, eventId } },
         create: {
+          organizationId,
           provider: providerType,
           eventId,
           eventType: parsedEvent.eventType,
           payloadJson: JSON.stringify(payload),
           headersJson: JSON.stringify(headers),
-          signatureVerified: false,
+          signatureVerified: true,
           status: "FAILED",
-          errorMessage: "Invalid webhook signature",
-          organizationId,
+          errorMessage: `No tenant attempt matching providerReference '${parsedEvent.providerReference}'`,
         },
         update: {
-          signatureVerified: false,
           status: "FAILED",
-          errorMessage: "Invalid webhook signature",
+          errorMessage: `No tenant attempt matching providerReference '${parsedEvent.providerReference}'`,
         },
       });
 
-      throw new PaymentDomainError("INVALID_SIGNATURE", "Webhook signature verification failed.");
+      throw new PaymentDomainError(
+        "TENANT_MISMATCH",
+        `PaymentAttempt with reference '${parsedEvent.providerReference}' does not belong to organization '${organizationId}'.`
+      );
     }
 
-    // Process event in database transaction
-    await this.prismaClient.$transaction(async (tx) => {
-      // Record or update WebhookEvent
-      await tx.webhookEvent.upsert({
-        where: {
-          provider_eventId: {
-            provider: providerType,
-            eventId,
-          },
+    // 6. Enforce financial invariants before any state changes
+    if (parsedEvent.currencyCode !== attempt.currencyCode) {
+      await this.prismaClient.reconciliationRecord.create({
+        data: {
+          organizationId,
+          provider: providerType,
+          providerTransactionId: null,
+          status: "DISCREPANCY_STATUS",
+          discrepancyType: "CURRENCY_MISMATCH",
+          detailsJson: JSON.stringify({
+            providerReference: parsedEvent.providerReference,
+            expectedCurrency: attempt.currencyCode,
+            webhookCurrency: parsedEvent.currencyCode,
+            attemptId: attempt.id,
+          }),
         },
+      });
+
+      throw new PaymentDomainError(
+        "CURRENCY_MISMATCH",
+        `Webhook currency (${parsedEvent.currencyCode}) does not match attempt currency (${attempt.currencyCode}).`
+      );
+    }
+
+    if (parsedEvent.amountMinor !== attempt.amountMinor) {
+      await this.prismaClient.reconciliationRecord.create({
+        data: {
+          organizationId,
+          provider: providerType,
+          providerTransactionId: null,
+          status: "DISCREPANCY_AMOUNT",
+          discrepancyType: "AMOUNT_MISMATCH_WEBHOOK_VS_ATTEMPT",
+          detailsJson: JSON.stringify({
+            providerReference: parsedEvent.providerReference,
+            expectedAmountMinor: attempt.amountMinor,
+            webhookAmountMinor: parsedEvent.amountMinor,
+            attemptId: attempt.id,
+          }),
+        },
+      });
+
+      throw new PaymentDomainError(
+        "AMOUNT_MISMATCH",
+        `Webhook amount (${parsedEvent.amountMinor}) does not match expected attempt amount (${attempt.amountMinor}).`
+      );
+    }
+
+    // 7. Atomic transaction: update WebhookEvent, PaymentAttempt, Payment, and PaymentIntent
+    await this.prismaClient.$transaction(async (tx) => {
+      // Record WebhookEvent
+      await tx.webhookEvent.upsert({
+        where: { provider_eventId: { provider: providerType, eventId } },
         create: {
+          organizationId,
           provider: providerType,
           eventId,
           eventType: parsedEvent.eventType,
@@ -131,7 +222,6 @@ export class WebhookEventService {
           signatureVerified: true,
           status: "PROCESSED",
           processedAt: new Date(),
-          organizationId,
         },
         update: {
           signatureVerified: true,
@@ -140,81 +230,68 @@ export class WebhookEventService {
         },
       });
 
-      if (attempt && attempt.status !== "SUCCEEDED" && attempt.status !== "FAILED") {
-        const nextStatus = parsedEvent.status === "SUCCEEDED" ? "SUCCEEDED" : "FAILED";
-        assertValidPaymentAttemptTransition(attempt.status as any, nextStatus);
+      const targetStatus = parsedEvent.status;
 
-        const updatedAttempt = await tx.paymentAttempt.update({
-          where: { id: attempt.id },
-          data: {
-            status: nextStatus,
-            providerReference: parsedEvent.providerReference || attempt.providerReference,
-          },
-        });
+      // Only transition if not already in terminal state
+      if (attempt.status !== "SUCCEEDED" && attempt.status !== "FAILED" && attempt.status !== "CANCELLED" && attempt.status !== "EXPIRED") {
+        assertValidPaymentAttemptTransition(attempt.status, targetStatus);
 
-        // Record ProviderTransaction
-        await tx.providerTransaction.create({
-          data: {
-            organizationId: attempt.organizationId,
-            paymentAttemptId: updatedAttempt.id,
-            provider: providerType,
-            providerTransactionId: parsedEvent.providerReference || `tx_${Date.now()}`,
-            statusRaw: parsedEvent.status,
-            feeMinor: parsedEvent.feeMinor || 0,
-            netMinor: (parsedEvent.netMinor ?? updatedAttempt.amountMinor),
-            rawPayloadJson: JSON.stringify(payload),
-          },
-        });
+        let internalPaymentId: string | null = null;
 
-        if (nextStatus === "SUCCEEDED") {
-          // Check PaymentIntent
-          const allAttempts = await tx.paymentAttempt.findMany({
-            where: {
-              organizationId: attempt.organizationId,
-              paymentIntentId: attempt.paymentIntentId,
-              status: "SUCCEEDED",
-            },
-          });
-          const totalPaid = allAttempts.reduce((sum, a) => sum + a.amountMinor, 0);
-          const newIntentStatus =
-            totalPaid >= attempt.paymentIntent.amountMinor ? "PAID" : "PARTIALLY_PAID";
+        if (targetStatus === "SUCCEEDED") {
+          // Row lock PaymentIntent to prevent concurrent overcollection
+          const lockedIntents: any[] = await tx.$queryRaw`
+            SELECT "id", "amountMinor"
+            FROM "PaymentIntent"
+            WHERE "organizationId" = ${organizationId}
+              AND "id" = ${attempt.paymentIntentId}
+            FOR UPDATE
+          `;
 
-          assertValidPaymentIntentTransition("PROCESSING", newIntentStatus);
+          const succeededAttemptsResult: any[] = await tx.$queryRaw`
+            SELECT coalesce(sum("amountMinor"), 0) as "totalSucceededMinor"
+            FROM "PaymentAttempt"
+            WHERE "organizationId" = ${organizationId}
+              AND "paymentIntentId" = ${attempt.paymentIntentId}
+              AND "status" = 'SUCCEEDED'
+          `;
+          const currentTotalSucceeded = Number(succeededAttemptsResult[0]?.totalSucceededMinor ?? 0);
 
-          await tx.paymentIntent.update({
-            where: { id: attempt.paymentIntentId },
-            data: { status: newIntentStatus },
-          });
+          if (currentTotalSucceeded + attempt.amountMinor > lockedIntents[0].amountMinor) {
+            throw new PaymentDomainError(
+              "AMOUNT_MISMATCH",
+              "Webhook confirmation would overcollect PaymentIntent total amount"
+            );
+          }
 
-          // If linked to Sale, update internal Payment ledger
+          // DOMAIN INVARIANT: PAYMENT_ATTEMPT != PAYMENT & SALE != PAYMENT
+          // Create internal Payment ledger row if linked to Sale (and ensure 1-to-1 linkage)
           if (attempt.paymentIntent.saleId) {
             const sale = await tx.sale.findUnique({
-              where: { id: attempt.paymentIntent.saleId },
+              where: {
+                organizationId_id: {
+                  organizationId,
+                  id: attempt.paymentIntent.saleId,
+                },
+              },
               include: { payments: true },
             });
 
             if (sale) {
-              const methodMap: Record<PaymentProviderType, any> = {
-                mock: "cash",
-                wave: "wave",
-                orange_money: "orange_money",
-                bank_transfer: "bank_transfer",
-                moov_money: "cash",
-                mtn_momo: "cash",
-              };
-
-              await tx.payment.create({
+              const newPayment = await tx.payment.create({
                 data: {
-                  organizationId: attempt.organizationId,
+                  organizationId,
                   saleId: sale.id,
-                  method: methodMap[providerType] || "cash",
-                  amountMinor: updatedAttempt.amountMinor,
+                  method: mapProviderToPaymentMethod(providerType),
+                  amountMinor: attempt.amountMinor,
                   status: "SUCCESS",
                 },
               });
+              internalPaymentId = newPayment.id;
 
+              // Recalculate Sale financials
               const updatedPayments = await tx.payment.findMany({
-                where: { organizationId: attempt.organizationId, saleId: sale.id },
+                where: { organizationId, saleId: sale.id },
               });
 
               const newPaidMinor = calculateAppliedPaidMinor(
@@ -225,7 +302,7 @@ export class WebhookEventService {
               const newPaymentStatus = derivePaymentStatusFromMinor(sale.totalMinor, newPaidMinor);
 
               await tx.sale.update({
-                where: { id: sale.id },
+                where: { organizationId_id: { organizationId, id: sale.id } },
                 data: {
                   paidMinor: newPaidMinor,
                   remainingMinor: newRemainingMinor,
@@ -234,6 +311,95 @@ export class WebhookEventService {
               });
             }
           }
+
+          // Advance Intent status
+          const newTotalPaid = currentTotalSucceeded + attempt.amountMinor;
+          const newIntentStatus =
+            newTotalPaid >= lockedIntents[0].amountMinor ? "PAID" : "PARTIALLY_PAID";
+
+          await tx.paymentIntent.update({
+            where: { organizationId_id: { organizationId, id: attempt.paymentIntentId } },
+            data: { status: newIntentStatus },
+          });
+        }
+
+        // Update PaymentAttempt
+        await tx.paymentAttempt.update({
+          where: { organizationId_id: { organizationId, id: attempt.id } },
+          data: {
+            status: targetStatus,
+            paymentId: internalPaymentId,
+            providerReference: parsedEvent.providerReference || attempt.providerReference,
+          },
+        });
+
+        // Record or update ProviderTransaction
+        await tx.providerTransaction.upsert({
+          where: {
+            organizationId_provider_providerTransactionId: {
+              organizationId,
+              provider: providerType,
+              providerTransactionId: parsedEvent.providerReference,
+            },
+          },
+          create: {
+            organizationId,
+            paymentAttemptId: attempt.id,
+            provider: providerType,
+            providerTransactionId: parsedEvent.providerReference,
+            statusRaw: parsedEvent.status,
+            feeMinor: parsedEvent.feeMinor || 0,
+            netMinor: parsedEvent.netMinor ?? (attempt.amountMinor - (parsedEvent.feeMinor || 0)),
+            rawPayloadJson: JSON.stringify(payload),
+          },
+          update: {
+            statusRaw: parsedEvent.status,
+            feeMinor: parsedEvent.feeMinor || 0,
+            netMinor: parsedEvent.netMinor ?? (attempt.amountMinor - (parsedEvent.feeMinor || 0)),
+            rawPayloadJson: JSON.stringify(payload),
+          },
+        });
+
+        // Audit & Outbox
+        const actor = await tx.membership.findFirst({
+          where: { organizationId, status: "active" },
+          select: { userId: true },
+        });
+
+        if (actor?.userId) {
+          await tx.auditEvent.create({
+            data: {
+              organizationId,
+              actorId: actor.userId,
+              action: `PAYMENT_ATTEMPT_${targetStatus}`,
+              resourceType: "PaymentAttempt",
+              resourceId: attempt.id,
+              metadataJson: JSON.stringify({
+                provider: providerType,
+                eventId,
+                providerReference: parsedEvent.providerReference,
+                status: targetStatus,
+              }),
+            },
+          });
+        }
+
+        if (targetStatus === "SUCCEEDED") {
+          await tx.outboxEvent.create({
+            data: {
+              organizationId,
+              eventType: "payment_attempt.succeeded",
+              aggregateType: "PaymentAttempt",
+              aggregateId: attempt.id,
+              payloadJson: JSON.stringify({
+                attemptId: attempt.id,
+                paymentIntentId: attempt.paymentIntentId,
+                amountMinor: attempt.amountMinor,
+                provider: providerType,
+                providerReference: parsedEvent.providerReference,
+              }),
+            },
+          });
         }
       }
     });

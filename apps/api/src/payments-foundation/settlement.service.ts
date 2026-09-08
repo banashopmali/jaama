@@ -8,6 +8,7 @@ import {
   PaymentReconciliationStatus,
   PaymentProviderType,
   PaymentDomainError,
+  assertSafeIntegerAmount,
   assertValidSettlementTransition,
 } from "./provider.interface";
 
@@ -36,38 +37,57 @@ export class SettlementService {
   ): Promise<Settlement> {
     const { organizationId } = userContext;
 
-    if (dto.totalAmountMinor <= 0) {
-      throw new PaymentDomainError("AMOUNT_MISMATCH", "Settlement amount must be positive.");
-    }
+    assertSafeIntegerAmount(dto.totalAmountMinor, "totalAmountMinor", 1);
+    const feeAmountMinor = dto.feeAmountMinor ?? 0;
+    assertSafeIntegerAmount(feeAmountMinor, "feeAmountMinor", 0, dto.totalAmountMinor);
 
-    const created = await this.prismaClient.settlement.create({
-      data: {
-        organizationId,
-        provider: dto.provider,
-        reference: dto.reference,
-        currencyCode: dto.currencyCode || "XOF",
-        totalAmountMinor: dto.totalAmountMinor,
-        feeAmountMinor: dto.feeAmountMinor || 0,
-        status: "PENDING",
-      },
+    return this.prismaClient.$transaction(async (tx) => {
+      const created = await tx.settlement.create({
+        data: {
+          organizationId,
+          provider: dto.provider,
+          reference: dto.reference,
+          currencyCode: dto.currencyCode || "XOF",
+          totalAmountMinor: dto.totalAmountMinor,
+          feeAmountMinor,
+          status: "PENDING",
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          organizationId,
+          actorId: userContext.actorId,
+          action: "SETTLEMENT_CREATED",
+          resourceType: "Settlement",
+          resourceId: created.id,
+          metadataJson: JSON.stringify({
+            provider: created.provider,
+            reference: created.reference,
+            totalAmountMinor: created.totalAmountMinor,
+            feeAmountMinor: created.feeAmountMinor,
+          }),
+        },
+      });
+
+      await tx.outboxEvent.create({
+        data: {
+          organizationId,
+          eventType: "settlement.created",
+          aggregateType: "Settlement",
+          aggregateId: created.id,
+          payloadJson: JSON.stringify({
+            id: created.id,
+            provider: created.provider,
+            reference: created.reference,
+            totalAmountMinor: created.totalAmountMinor,
+            status: created.status,
+          }),
+        },
+      });
+
+      return created as unknown as Settlement;
     });
-
-    await this.prismaClient.auditEvent.create({
-      data: {
-        organizationId,
-        actorId: userContext.actorId,
-        action: "SETTLEMENT_CREATED",
-        resourceType: "Settlement",
-        resourceId: created.id,
-        metadataJson: JSON.stringify({
-          provider: created.provider,
-          reference: created.reference,
-          totalAmountMinor: created.totalAmountMinor,
-        }),
-      },
-    });
-
-    return created as unknown as Settlement;
   }
 
   public async updateSettlementStatus(
@@ -78,48 +98,84 @@ export class SettlementService {
   ): Promise<Settlement> {
     const { organizationId } = userContext;
 
-    const settlement = await this.prismaClient.settlement.findUnique({
-      where: {
-        organizationId_id: {
-          organizationId,
-          id: settlementId,
+    return this.prismaClient.$transaction(async (tx) => {
+      const settlement = await tx.settlement.findUnique({
+        where: {
+          organizationId_id: {
+            organizationId,
+            id: settlementId,
+          },
         },
-      },
-    });
+      });
 
-    if (!settlement) {
-      throw new PaymentDomainError("TENANT_MISMATCH", `Settlement '${settlementId}' not found.`);
-    }
+      if (!settlement) {
+        throw new PaymentDomainError("TENANT_MISMATCH", `Settlement '${settlementId}' not found.`);
+      }
 
-    assertValidSettlementTransition(settlement.status as any, toStatus);
+      assertValidSettlementTransition(settlement.status as SettlementStatus, toStatus);
 
-    const updated = await this.prismaClient.settlement.update({
-      where: {
-        organizationId_id: {
-          organizationId,
-          id: settlementId,
+      let finalSettledAmount = settlement.settledAmountMinor;
+      if (settledAmountMinor !== undefined) {
+        assertSafeIntegerAmount(settledAmountMinor, "settledAmountMinor", 0, settlement.totalAmountMinor);
+        finalSettledAmount = settledAmountMinor;
+      }
+
+      // Check monetary compatibility with status
+      if (toStatus === "SETTLED" && finalSettledAmount < settlement.totalAmountMinor) {
+        throw new PaymentDomainError(
+          "AMOUNT_MISMATCH",
+          `Cannot mark settlement SETTLED when settled amount (${finalSettledAmount}) is less than total amount (${settlement.totalAmountMinor}).`
+        );
+      }
+
+      const updated = await tx.settlement.update({
+        where: {
+          organizationId_id: {
+            organizationId,
+            id: settlementId,
+          },
         },
-      },
-      data: {
-        status: toStatus,
-        settledAmountMinor:
-          settledAmountMinor !== undefined ? settledAmountMinor : settlement.settledAmountMinor,
-        settledAt: toStatus === "SETTLED" || toStatus === "RECONCILED" ? new Date() : settlement.settledAt,
-      },
-    });
+        data: {
+          status: toStatus,
+          settledAmountMinor: finalSettledAmount,
+          settledAt:
+            toStatus === "SETTLED" || toStatus === "RECONCILED"
+              ? new Date()
+              : settlement.settledAt,
+        },
+      });
 
-    await this.prismaClient.auditEvent.create({
-      data: {
-        organizationId,
-        actorId: userContext.actorId,
-        action: "SETTLEMENT_STATUS_UPDATED",
-        resourceType: "Settlement",
-        resourceId: updated.id,
-        metadataJson: JSON.stringify({ from: settlement.status, to: toStatus }),
-      },
-    });
+      await tx.auditEvent.create({
+        data: {
+          organizationId,
+          actorId: userContext.actorId,
+          action: "SETTLEMENT_STATUS_UPDATED",
+          resourceType: "Settlement",
+          resourceId: updated.id,
+          metadataJson: JSON.stringify({
+            from: settlement.status,
+            to: toStatus,
+            settledAmountMinor: finalSettledAmount,
+          }),
+        },
+      });
 
-    return updated as unknown as Settlement;
+      await tx.outboxEvent.create({
+        data: {
+          organizationId,
+          eventType: "settlement.status_updated",
+          aggregateType: "Settlement",
+          aggregateId: updated.id,
+          payloadJson: JSON.stringify({
+            id: updated.id,
+            status: updated.status,
+            settledAmountMinor: updated.settledAmountMinor,
+          }),
+        },
+      });
+
+      return updated as unknown as Settlement;
+    });
   }
 
   public async reconcileRecord(
@@ -128,63 +184,131 @@ export class SettlementService {
   ): Promise<ReconciliationRecord> {
     const { organizationId } = userContext;
 
-    // Verify ProviderTransaction
-    const providerTx = await this.prismaClient.providerTransaction.findUnique({
-      where: {
-        organizationId_id: {
-          organizationId,
-          id: dto.providerTransactionId,
-        },
-      },
-    });
-
-    if (!providerTx) {
-      throw new PaymentDomainError(
-        "TENANT_MISMATCH",
-        `ProviderTransaction '${dto.providerTransactionId}' not found.`
-      );
-    }
-
-    let status: PaymentReconciliationStatus = "MATCHED";
-    let discrepancyType: string | null = null;
-
-    if (dto.paymentId) {
-      const payment = await this.prismaClient.payment.findUnique({
+    return this.prismaClient.$transaction(async (tx) => {
+      // 1. Verify ProviderTransaction
+      const providerTx = await tx.providerTransaction.findUnique({
         where: {
           organizationId_id: {
             organizationId,
-            id: dto.paymentId,
+            id: dto.providerTransactionId,
           },
         },
       });
 
-      if (!payment) {
-        status = "UNMATCHED_INTERNAL";
-        discrepancyType = "INTERNAL_PAYMENT_NOT_FOUND";
-      } else if (payment.amountMinor !== providerTx.netMinor + providerTx.feeMinor) {
-        status = "DISCREPANCY_AMOUNT";
-        discrepancyType = "AMOUNT_MISMATCH_LEDGER_VS_PROVIDER";
+      if (!providerTx) {
+        throw new PaymentDomainError(
+          "TENANT_MISMATCH",
+          `ProviderTransaction '${dto.providerTransactionId}' not found.`
+        );
       }
-    }
 
-    const record = await this.prismaClient.reconciliationRecord.create({
-      data: {
-        organizationId,
-        provider: dto.provider,
-        providerTransactionId: providerTx.id,
-        paymentId: dto.paymentId || null,
-        settlementId: dto.settlementId || null,
-        status,
-        discrepancyType,
-        detailsJson: JSON.stringify({
-          providerTxId: providerTx.id,
-          paymentId: dto.paymentId,
-          settlementId: dto.settlementId,
-        }),
-      },
+      // Reconciliation status is NEVER assumed MATCHED by default
+      let status: PaymentReconciliationStatus;
+      let discrepancyType: string | null = null;
+
+      // 2. Validate internal Payment
+      if (!dto.paymentId) {
+        status = "UNMATCHED_INTERNAL";
+        discrepancyType = "MISSING_INTERNAL_PAYMENT";
+      } else {
+        const payment = await tx.payment.findUnique({
+          where: {
+            organizationId_id: {
+              organizationId,
+              id: dto.paymentId,
+            },
+          },
+        });
+
+        if (!payment) {
+          status = "UNMATCHED_INTERNAL";
+          discrepancyType = "INTERNAL_PAYMENT_NOT_FOUND";
+        } else if (providerTx.provider !== dto.provider) {
+          status = "DISCREPANCY_STATUS";
+          discrepancyType = "PROVIDER_MISMATCH";
+        } else if (payment.amountMinor !== providerTx.netMinor + providerTx.feeMinor) {
+          status = "DISCREPANCY_AMOUNT";
+          discrepancyType = "AMOUNT_MISMATCH_LEDGER_VS_PROVIDER";
+        } else if (payment.status !== "SUCCESS") {
+          status = "DISCREPANCY_STATUS";
+          discrepancyType = "PAYMENT_NOT_SUCCESS";
+        } else {
+          // If settlement supplied, verify its consistency
+          if (dto.settlementId) {
+            const settlement = await tx.settlement.findUnique({
+              where: {
+                organizationId_id: {
+                  organizationId,
+                  id: dto.settlementId,
+                },
+              },
+            });
+
+            if (!settlement) {
+              status = "DISCREPANCY_STATUS";
+              discrepancyType = "SETTLEMENT_NOT_FOUND";
+            } else if (settlement.provider !== dto.provider) {
+              status = "DISCREPANCY_STATUS";
+              discrepancyType = "SETTLEMENT_PROVIDER_MISMATCH";
+            } else {
+              status = "MATCHED";
+            }
+          } else {
+            status = "MATCHED";
+          }
+        }
+      }
+
+      const record = await tx.reconciliationRecord.create({
+        data: {
+          organizationId,
+          provider: dto.provider,
+          providerTransactionId: providerTx.id,
+          paymentId: dto.paymentId || null,
+          settlementId: dto.settlementId || null,
+          status,
+          discrepancyType,
+          detailsJson: JSON.stringify({
+            providerTxId: providerTx.id,
+            paymentId: dto.paymentId,
+            settlementId: dto.settlementId,
+            status,
+            discrepancyType,
+          }),
+        },
+      });
+
+      await tx.auditEvent.create({
+        data: {
+          organizationId,
+          actorId: userContext.actorId,
+          action: "RECONCILIATION_RECORDED",
+          resourceType: "ReconciliationRecord",
+          resourceId: record.id,
+          metadataJson: JSON.stringify({
+            status: record.status,
+            discrepancyType: record.discrepancyType,
+            providerTxId: providerTx.id,
+          }),
+        },
+      });
+
+      await tx.outboxEvent.create({
+        data: {
+          organizationId,
+          eventType: "reconciliation.recorded",
+          aggregateType: "ReconciliationRecord",
+          aggregateId: record.id,
+          payloadJson: JSON.stringify({
+            id: record.id,
+            status: record.status,
+            discrepancyType: record.discrepancyType,
+          }),
+        },
+      });
+
+      return record as unknown as ReconciliationRecord;
     });
-
-    return record as unknown as ReconciliationRecord;
   }
 
   public async listSettlements(userContext: UserContext): Promise<Settlement[]> {
