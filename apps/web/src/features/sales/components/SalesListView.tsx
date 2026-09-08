@@ -60,7 +60,7 @@ export const SalesListView: React.FC<SalesListViewProps> = ({
           totalAmount: s.totalMinor ?? s.totalAmount ?? 0,
           paidAmount: s.paidMinor ?? s.paidAmount ?? 0,
           remainingAmount: s.remainingMinor ?? s.remainingAmount ?? 0,
-          paymentMethod: s.paymentMethod || "cash",
+          paymentMethod: s.payments?.[0]?.method || s.paymentMethod || "cash",
           paymentStatus:
             s.paymentStatus === "PAID" || s.paymentStatus === "Payée"
               ? "Payée"
@@ -107,7 +107,7 @@ export const SalesListView: React.FC<SalesListViewProps> = ({
     );
   }
 
-  if (activeState === "empty") {
+  if (activeState === "empty" || (!salesState && !overrideState && !loading && sales.length === 0)) {
     return (
       <div className="space-y-6">
         <SalesHeader />
