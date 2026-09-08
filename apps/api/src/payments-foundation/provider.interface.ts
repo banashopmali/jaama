@@ -1,5 +1,5 @@
 // Authoritative Payment Provider Contract (JAA-S2-01)
-export {
+export type {
   PaymentProvider,
   PaymentProviderConfig,
   PaymentIntent,
@@ -15,10 +15,13 @@ export {
   WebhookEventStatus,
   PaymentReconciliationStatus,
   PaymentErrorCode,
-  PaymentDomainError,
   ProviderAttemptState,
   ProviderAttemptResult,
   WebhookParseResult,
+} from "@jaama/types";
+
+export {
+  PaymentDomainError,
   assertSafeIntegerAmount,
   isValidPaymentIntentTransition,
   assertValidPaymentIntentTransition,

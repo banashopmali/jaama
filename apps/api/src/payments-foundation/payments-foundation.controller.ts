@@ -9,17 +9,17 @@ import {
   Optional,
 } from "@nestjs/common";
 import { AuthTenantGuard, RequirePermission } from "../common/auth-tenant.guard";
-import {
-  PaymentIntentService,
+import { PaymentIntentService } from "./payment-intent.service";
+import type {
   CreatePaymentIntentDto,
   CreatePaymentAttemptDto,
 } from "./payment-intent.service";
-import {
-  SettlementService,
+import { SettlementService } from "./settlement.service";
+import type {
   CreateSettlementDto,
   ReconcileTransactionDto,
 } from "./settlement.service";
-import { SettlementStatus } from "./provider.interface";
+import type { SettlementStatus } from "./provider.interface";
 
 @Controller("api/v1/payments-foundation")
 @UseGuards(AuthTenantGuard)

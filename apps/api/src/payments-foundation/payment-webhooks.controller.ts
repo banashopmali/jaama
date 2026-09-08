@@ -9,7 +9,8 @@ import {
   Optional,
 } from "@nestjs/common";
 import { WebhookEventService } from "./webhook-event.service";
-import { PaymentProviderType, PaymentDomainError } from "./provider.interface";
+import type { PaymentProviderType } from "./provider.interface";
+import { PaymentDomainError } from "./provider.interface";
 
 @Controller("api/v1/payments-foundation/webhooks")
 export class PaymentWebhooksController {
