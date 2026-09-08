@@ -1,17 +1,11 @@
 import React, { Suspense } from "react";
-import { DashboardView, DashboardLoading, DashboardStateMode } from "@/features/dashboard";
+import { DashboardLoading } from "@/features/dashboard";
+import { DashboardClientContainer } from "@/features/dashboard/DashboardClientContainer";
 
-export interface DashboardPageProps {
-  searchParams?: { dashboardState?: string } | Promise<{ dashboardState?: string }>;
-}
-
-export default async function DashboardHomePage({ searchParams }: DashboardPageProps) {
-  const resolvedSearchParams = await Promise.resolve(searchParams);
-  const stateMode = (resolvedSearchParams?.dashboardState as DashboardStateMode) || "populated";
-
+export default function DashboardHomePage() {
   return (
     <Suspense fallback={<DashboardLoading />}>
-      <DashboardView stateMode={stateMode} />
+      <DashboardClientContainer />
     </Suspense>
   );
 }

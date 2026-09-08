@@ -10,6 +10,8 @@ export interface MetricCardProps {
 }
 
 export const MetricCard: React.FC<MetricCardProps> = ({ metric, icon }) => {
+  if (!metric) return null;
+
   const trend = metric.trend;
   const formattedTrendString = trend ? formatTrend(trend) : "";
 

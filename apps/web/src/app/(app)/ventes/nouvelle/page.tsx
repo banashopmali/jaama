@@ -1,5 +1,6 @@
 import React, { Suspense } from "react";
-import { PosView, PosLoading, PosStateMode } from "@/features/pos";
+import { PosLoading, PosStateMode } from "@/features/pos";
+import { PosClientContainer } from "@/features/pos/PosClientContainer";
 
 export interface NouvelleVentePageProps {
   searchParams?: { posState?: string } | Promise<{ posState?: string }>;
@@ -11,7 +12,7 @@ export default async function NouvelleVentePage({ searchParams }: NouvelleVenteP
 
   return (
     <Suspense fallback={<PosLoading />}>
-      <PosView posState={posState} />
+      <PosClientContainer posState={posState} />
     </Suspense>
   );
 }

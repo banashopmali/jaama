@@ -1,6 +1,6 @@
 import React from "react";
-import { ModulePlaceholder } from "@/components/app-shell/ModulePlaceholder";
+import { InvoicesView } from "@/features/invoices/components/InvoicesView";
 
 export default function FacturesPage() {
-  return <ModulePlaceholder title="Factures & devis" moduleKey="factures" />;
+  return <InvoicesView />;
 }

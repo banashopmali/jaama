@@ -26,6 +26,7 @@ export interface CheckoutViewProps {
   cashReceivedInput: number;
   paymentAllocations: PosPaymentAllocation[];
   validationError: string | null;
+  submitError?: string | null;
   onSelectCustomer: (customer: PosCustomer) => void;
   onSelectPaymentMethod: (method: PaymentMethod) => void;
   onPaidAmountChange: (amount: number) => void;
@@ -48,6 +49,7 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
   cashReceivedInput,
   paymentAllocations,
   validationError,
+  submitError,
   onSelectCustomer,
   onSelectPaymentMethod,
   onPaidAmountChange,
@@ -58,12 +60,10 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
   onUpdateAllocationMethod,
   onBackToCart,
   onConfirmSale,
-  isSubmitting = false,
+  isSubmitting,
 }) => {
   const subtotal = calculateSubtotal(cart);
   const totalAmount = calculateTotal(subtotal, discountAmount);
-
-  // SINGLE SOURCE OF TRUTH APPLIED PAID AMOUNT
   const paidAmount = calculateAppliedPaidAmount(
     paymentMethod,
     paidAmountInput,
@@ -74,24 +74,26 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
   const remainingAmount = calculateRemaining(totalAmount, paidAmount);
   const paymentStatus = derivePaymentStatus(totalAmount, paidAmount);
 
-  const isCartEmpty = cart.length === 0;
-  const isPaymentMethodSelected = Boolean(paymentMethod);
-  const canConfirm = !isCartEmpty && isPaymentMethodSelected && totalAmount > 0;
+  const activeError = validationError || submitError;
+  const canConfirm = !validationError && paymentMethod !== null && !isSubmitting;
 
   return (
-    <Card variant="default" className="p-5 space-y-5 border-border-subtle shadow-xs bg-surface-default">
-      {/* Header */}
+    <Card variant="default" className="p-5 space-y-6 shadow-xs">
+      {/* Step Header */}
       <div className="flex items-center justify-between border-b border-border-subtle pb-3">
         <div className="flex items-center gap-2">
-          <button
-            type="button"
+          <Button
+            variant="ghost"
+            size="sm"
             onClick={onBackToCart}
-            className="p-1 rounded-md text-content-secondary hover:text-content-brand transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-brand-primary"
             aria-label="Retour au panier"
+            className="p-1 h-8 w-8"
           >
-            <ArrowLeft className="w-5 h-5" />
-          </button>
-          <h3 className="text-base font-bold text-content-primary">Règlement de la vente</h3>
+            <ArrowLeft className="w-4 h-4 text-content-secondary" />
+          </Button>
+          <h3 className="text-base font-bold text-content-primary font-sans">
+            Règlement de la vente
+          </h3>
         </div>
 
         <span className="text-sm font-extrabold text-content-brand font-sans">
@@ -99,10 +101,10 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
         </span>
       </div>
 
-      {/* Validation Error Alert */}
-      {validationError && (
+      {/* Validation or Network Error Alert */}
+      {activeError && (
         <Alert variant="danger" title="Validation impossible">
-          <p className="text-xs">{validationError}</p>
+          <p className="text-xs">{activeError}</p>
         </Alert>
       )}
 
@@ -175,7 +177,7 @@ export const CheckoutView: React.FC<CheckoutViewProps> = ({
           className="sm:w-2/3"
           leftIcon={<CheckCircle2 className="w-5 h-5" />}
         >
-          Confirmer la vente ({formatMoney(totalAmount)})
+          {isSubmitting ? "Validation en cours..." : `Confirmer la vente (${formatMoney(totalAmount)})`}
         </Button>
       </div>
     </Card>

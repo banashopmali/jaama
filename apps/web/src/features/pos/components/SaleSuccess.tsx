@@ -1,42 +1,49 @@
 import React from "react";
-import Link from "next/link";
-import { CheckCircle, PlusCircle, ArrowLeft, Printer } from "lucide-react";
-import { Button, Card, Badge } from "@jaama/ui";
-import { PosConfirmedSaleSummary } from "../pos.types";
+import { CheckCircle2, Printer, PlusCircle, ArrowLeft } from "lucide-react";
+import { Button, Card } from "@jaama/ui";
+import { CompletedSaleSummary } from "../pos.types";
 import { formatMoney, getPaymentMethodLabel } from "../../sales/sales.utils";
 import { PaymentStatusBadge } from "../../sales/components/PaymentStatusBadge";
 
 export interface SaleSuccessProps {
-  summary: PosConfirmedSaleSummary;
+  summary: CompletedSaleSummary & { changeDue?: number };
   onNewSale: () => void;
+  onBackToList?: () => void;
 }
 
-export const SaleSuccess: React.FC<SaleSuccessProps> = ({ summary, onNewSale }) => {
-  return (
-    <Card variant="default" className="p-6 md:p-8 text-center max-w-xl mx-auto space-y-6 shadow-md border-border-brand-subtle">
-      {/* Icon Badge */}
-      <div className="w-16 h-16 rounded-full bg-status-success-subtle text-status-success flex items-center justify-center border border-border-success-subtle mx-auto shadow-xs">
-        <CheckCircle className="w-9 h-9" />
-      </div>
+export const SaleSuccess: React.FC<SaleSuccessProps> = ({
+  summary,
+  onNewSale,
+  onBackToList = () => {},
+}) => {
+  const change = summary.changeAmount ?? summary.changeDue ?? 0;
 
-      {/* Main Title & Reference */}
-      <div className="space-y-1">
-        <Badge variant={summary.isSimulated ? "warning" : "success"} size="sm" className="mb-2 uppercase tracking-wide">
-          {summary.isSimulated ? "SIMULATION FRONTEND — MOCK TEST ADAPTER" : "VENTE PERSISTÉE — CONFIRMÉE PAR LE SERVEUR"}
-        </Badge>
-        <h2 className="text-2xl font-extrabold text-content-primary tracking-tight font-sans">
+  return (
+    <Card variant="default" className="p-8 text-center max-w-lg mx-auto space-y-6">
+      {/* Icon & Title */}
+      <div className="flex flex-col items-center space-y-3">
+        <div className="w-16 h-16 rounded-full bg-status-success-subtle text-status-success flex items-center justify-center animate-bounce">
+          <CheckCircle2 className="w-10 h-10" />
+        </div>
+        <h2 className="text-2xl font-extrabold text-content-primary font-sans">
           Vente enregistrée
         </h2>
         <p className="text-xs text-content-secondary font-mono">
           Référence : <strong className="text-content-brand font-bold">{summary.reference}</strong> · {summary.occurredAt}
         </p>
+
+        {summary.isSimulated && (
+          <div className="p-2 rounded-lg bg-status-warning-subtle text-status-warning text-xs font-bold border border-status-warning-border">
+            SIMULATION FRONTEND — MOCK TEST ADAPTER
+          </div>
+        )}
       </div>
 
       {/* Sale Details Box */}
       <div className="p-4 rounded-xl bg-surface-subtle border border-border-subtle text-left space-y-3 text-xs">
         <div className="flex justify-between items-center pb-2 border-b border-border-subtle">
           <span className="text-content-secondary font-medium">Client</span>
-          <span className="font-bold text-content-primary">{summary.customer.name}</span>
+          <span className="font-bold text-content-primary">{summary.customer?.name || "Client"}</span>
         </div>
 
         <div className="flex justify-between items-center pb-2 border-b border-border-subtle">
@@ -49,60 +56,54 @@ export const SaleSuccess: React.FC<SaleSuccessProps> = ({ summary, onNewSale }) 
           <PaymentStatusBadge status={summary.paymentStatus} />
         </div>
 
-        <div className="flex justify-between items-center pt-1 font-extrabold text-sm font-sans text-content-primary">
-          <span>Total de la vente</span>
-          <span className="text-content-brand text-base">{formatMoney(summary.totalAmount)}</span>
+        <div className="flex justify-between items-center text-sm pt-1">
+          <span className="text-content-primary font-bold">Montant Total</span>
+          <span className="text-lg font-extrabold text-content-brand">{formatMoney(summary.totalAmount)}</span>
         </div>
 
-        <div className="flex justify-between items-center text-xs">
-          <span>Montant perçu : <strong className="text-content-primary">{formatMoney(summary.paidAmount)}</strong></span>
-          <span>Reste à encaisser : <strong className="text-status-warning">{formatMoney(summary.remainingAmount)}</strong></span>
-        </div>
-
-        {summary.changeDue !== undefined && summary.changeDue > 0 && (
-          <div className="p-2 rounded bg-status-success-subtle text-status-success font-bold flex justify-between">
+        {change > 0 && (
+          <div className="flex justify-between items-center p-2.5 rounded-lg bg-status-success-subtle text-status-success text-xs font-bold mt-2">
             <span>Monnaie rendue au client :</span>
-            <span>{formatMoney(summary.changeDue)}</span>
+            <span className="text-sm font-extrabold">{formatMoney(change)}</span>
           </div>
         )}
       </div>
 
-      {/* Action Buttons */}
-      <div className="flex flex-col sm:flex-row gap-3 pt-2">
+      {/* Action CTA Buttons */}
+      <div className="space-y-3 pt-2">
         <Button
-          variant="primary"
-          size="lg"
-          onClick={onNewSale}
-          className="flex-1"
-          leftIcon={<PlusCircle className="w-5 h-5" />}
+          variant="secondary"
+          size="md"
+          className="w-full justify-center gap-2"
+          onClick={() => {
+            alert(`Impression du reçu pour la vente ${summary.reference}`);
+          }}
+          leftIcon={<Printer className="w-4 h-4" />}
         >
-          Nouvelle vente
+          Imprimer le reçu
         </Button>
 
-        <Link href="/ventes" className="flex-1">
+        <div className="grid grid-cols-2 gap-3">
           <Button
-            variant="secondary"
-            size="lg"
-            className="w-full"
-            leftIcon={<ArrowLeft className="w-5 h-5" />}
+            variant="primary"
+            size="md"
+            className="w-full justify-center gap-1.5"
+            onClick={onNewSale}
+            leftIcon={<PlusCircle className="w-4 h-4" />}
           >
-            Retour aux ventes
+            Nouvelle vente
           </Button>
-        </Link>
-      </div>
 
-      {/* Disabled Receipt Action */}
-      <div className="pt-2">
-        <Button
-          variant="ghost"
-          size="sm"
-          disabled
-          title="Impression de reçu disponible prochainement"
-          leftIcon={<Printer className="w-4 h-4 text-content-muted" />}
-          className="text-content-muted cursor-not-allowed opacity-60"
-        >
-          Voir / Imprimer le reçu (Bientôt disponible)
-        </Button>
+          <Button
+            variant="ghost"
+            size="md"
+            className="w-full justify-center gap-1.5"
+            onClick={onBackToList}
+            leftIcon={<ArrowLeft className="w-4 h-4" />}
+          >
+            Voir les ventes
+          </Button>
+        </div>
       </div>
     </Card>
   );

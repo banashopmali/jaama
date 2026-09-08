@@ -9,8 +9,17 @@ export interface SalesTrendCardProps {
 }
 
 export const SalesTrendCard: React.FC<SalesTrendCardProps> = ({ salesTrend }) => {
-  const points = salesTrend.points;
-  const maxAmount = points.length > 0 ? Math.max(...points.map((p) => p.amount)) : 1;
+  if (!salesTrend) return null;
+
+  const rawPoints = (salesTrend as any).points || (salesTrend as any).dataPoints || [];
+  const points = rawPoints.map((pt: any) => ({
+    dayLabel: pt.dayLabel || pt.label || "Jour",
+    amount: pt.amount || pt.value || 0,
+  }));
+
+  const maxAmount = points.length > 0 ? Math.max(...points.map((p: any) => p.amount)) : 1;
+  const percentageChange = salesTrend.percentageChange ?? 0;
+  const summaryText = salesTrend.summaryText || "Activité des ventes";
 
   return (
     <Card variant="default" className="h-full flex flex-col justify-between">
@@ -32,23 +41,23 @@ export const SalesTrendCard: React.FC<SalesTrendCardProps> = ({ salesTrend }) =>
 
           <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg bg-status-success-subtle text-status-success text-xs font-bold">
             <TrendingUp className="w-3.5 h-3.5" />
-            <span>+{salesTrend.percentageChange} %</span>
+            <span>+{percentageChange} %</span>
           </div>
         </div>
       </CardHeader>
 
       <CardContent className="pt-2 flex-1 flex flex-col justify-between space-y-4">
         {/* Accessible Text Summary for Screen Readers */}
-        <p className="sr-only">{salesTrend.summaryText}</p>
+        <p className="sr-only">{summaryText}</p>
 
         {/* Lightweight SVG Bar/Line Chart */}
         {points.length > 0 ? (
           <div
             role="img"
-            aria-label={salesTrend.summaryText}
+            aria-label={summaryText}
             className="w-full h-48 sm:h-56 flex items-end justify-between gap-2 sm:gap-3 pt-6 pb-2 px-1 select-none"
           >
-            {points.map((pt, idx) => {
+            {points.map((pt: any, idx: number) => {
               const heightPercent = Math.max(12, Math.round((pt.amount / maxAmount) * 100));
               const isToday = idx === points.length - 1;
 
@@ -92,7 +101,7 @@ export const SalesTrendCard: React.FC<SalesTrendCardProps> = ({ salesTrend }) =>
 
         {/* Text Summary Banner */}
         <div className="p-3 rounded-xl bg-surface-subtle border border-border-subtle text-xs text-content-secondary font-medium leading-relaxed">
-          {salesTrend.summaryText}
+          {summaryText}
         </div>
       </CardContent>
     </Card>

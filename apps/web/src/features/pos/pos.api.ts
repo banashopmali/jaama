@@ -11,7 +11,6 @@ import { mapBackendPaymentStatus, mapBackendSaleStatus } from "../sales/sales.ut
 
 export interface PosApiContext {
   apiUrl: string;
-  sessionToken: string;
   organizationId: string;
 }
 
@@ -65,8 +64,11 @@ export function buildCreateSaleApiPayload(
     }
   }
 
+  const effectiveCustomerId =
+    customerId && customerId !== "cust-0" && customerId !== "walk_in" ? customerId : null;
+
   return {
-    customerId: customerId || null,
+    customerId: effectiveCustomerId,
     lines,
     discountMinor,
     payments,
@@ -91,9 +93,9 @@ export async function submitSaleToApi(
   customerId: string | null | undefined,
   context: PosApiContext
 ): Promise<PosConfirmedSaleSummary> {
-  if (!context || !context.apiUrl || !context.sessionToken || !context.organizationId) {
+  if (!context || !context.apiUrl || !context.organizationId) {
     throw new Error(
-      "Contexte d'authentification POS manquant (apiUrl, sessionToken, organizationId requis). Impossible de valider la vente sans session d'entreprise."
+      "Contexte d'authentification POS manquant (apiUrl, organizationId requis). Impossible de valider la vente sans session d'entreprise."
     );
   }
 
@@ -112,9 +114,9 @@ export async function submitSaleToApi(
   try {
     response = await fetch(`${context.apiUrl}/api/v1/sales`, {
       method: "POST",
+      credentials: "include",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${context.sessionToken}`,
         "X-Organization-ID": context.organizationId,
       },
       body: JSON.stringify(payload),

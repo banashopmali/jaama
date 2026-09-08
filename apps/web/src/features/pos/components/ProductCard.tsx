@@ -15,10 +15,12 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   cartQuantity,
   onAddToCart,
 }) => {
-  const isOutOfStock = product.stock.status === "out" || product.stock.available === 0;
-  const isLowStock = product.stock.status === "low" || product.stock.available <= 3;
-  const isStockLimitReached = cartQuantity >= product.stock.available;
+  const stockAvailable = product.stock?.available ?? (product as any).stockCount ?? 0;
+  const isOutOfStock = product.stock?.status === "out" || stockAvailable === 0;
+  const isLowStock = product.stock?.status === "low" || (stockAvailable > 0 && stockAvailable <= 3);
+  const isStockLimitReached = cartQuantity >= stockAvailable;
   const isDisabled = isOutOfStock || isStockLimitReached;
+  const price = product.unitPrice ?? (product as any).priceAmount ?? 0;
 
   return (
     <Card
@@ -42,11 +44,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         ) : isLowStock ? (
           <Badge variant="warning" size="sm" className="gap-1 text-[10px]">
             <AlertTriangle className="w-3 h-3 shrink-0" />
-            <span>Stock faible ({product.stock.available})</span>
+            <span>Stock faible ({stockAvailable})</span>
           </Badge>
         ) : (
           <span className="text-[11px] font-medium text-content-secondary">
-            Stock : {product.stock.available}
+            Stock : {stockAvailable}
           </span>
         )}
       </div>
@@ -64,7 +66,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       {/* Footer Price & Add CTA Button (Single Interactive Control) */}
       <div className="flex items-center justify-between pt-3 border-t border-border-subtle mt-2">
         <div className="text-base font-extrabold text-content-primary tracking-tight">
-          {formatMoney(product.unitPrice)}
+          {formatMoney(price)}
         </div>
 
         <button

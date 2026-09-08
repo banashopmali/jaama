@@ -12,6 +12,10 @@ out/
 build/
 dist/
 .turbo/
+apps/api/src/**/*.js
+apps/api/src/**/*.d.ts
+apps/api/src/**/*.js.map
+apps/api/src/**/*.d.ts.map
 
 # debug
 npm-debug.log*

@@ -7,7 +7,7 @@ export interface VentesPageProps {
 
 export default async function VentesPage({ searchParams }: VentesPageProps) {
   const resolvedSearchParams = await Promise.resolve(searchParams);
-  const salesState = (resolvedSearchParams?.salesState as SalesStateMode) || "populated";
+  const salesState = resolvedSearchParams?.salesState as SalesStateMode | undefined;
 
   return (
     <Suspense fallback={<SalesLoading />}>

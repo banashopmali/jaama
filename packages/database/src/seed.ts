@@ -2,10 +2,25 @@ import { PrismaClient } from "@prisma/client";
 
 const prisma = new PrismaClient();
 
+// Static Argon2id hash for Password123!
+const TEST_PASSWORD_HASH = "$argon2id$v=19$m=65536,t=3,p=4$sWt2itVBKkHByB/dzAEP9w$YRBmCSshDDBakw8sVuQwj0+CXNKZokcNIM7ZoX9IVuo";
+
 export async function seedPostgresDatabase(client: PrismaClient = prisma) {
   // Execute clean seeding with extended 30s transaction timeout to prevent test concurrency timeouts
   await client.$transaction(
     async (tx) => {
+      await tx.notification.deleteMany();
+      await tx.quoteLine.deleteMany();
+      await tx.quote.deleteMany();
+      await tx.invoiceLine.deleteMany();
+      await tx.invoice.deleteMany();
+      await tx.receivingLine.deleteMany();
+      await tx.receiving.deleteMany();
+      await tx.purchaseLine.deleteMany();
+      await tx.purchase.deleteMany();
+      await tx.expense.deleteMany();
+      await tx.supplier.deleteMany();
+
       await tx.idempotencyRecord.deleteMany();
       await tx.outboxEvent.deleteMany();
       await tx.auditEvent.deleteMany();
@@ -36,28 +51,62 @@ export async function seedPostgresDatabase(client: PrismaClient = prisma) {
       const hamidouUser = await tx.user.create({
         data: {
           id: "user-hamidou",
-          email: "hamidou@diallo.com",
+          email: "hamidou@diallo-commerce.ml",
           name: "Hamidou Diallo",
           status: "active",
         },
       });
 
-      // 3. Create Password Credential for Hamidou
-      const passwordHash = "8d969eef6ecad3c29a3a629280e686cf0c3f5d5a86aff3ca12020c923adc6c92:4f3a71b29c8e401b";
       await tx.credential.create({
         data: {
           id: "cred-hamidou",
           userId: hamidouUser.id,
-          passwordHash,
+          passwordHash: TEST_PASSWORD_HASH,
         },
       });
 
-      // 4. Create Membership: Hamidou is Admin of Diallo Commerce
       await tx.membership.create({
         data: {
           id: "org-diallo:user-hamidou",
           organizationId: dialloOrg.id,
           userId: hamidouUser.id,
+          role: "admin",
+          status: "active",
+        },
+      });
+
+      // 4. Create Organization B & User B for Tenant Isolation Tests
+      const babaOrg = await tx.organization.create({
+        data: {
+          id: "org-baba",
+          name: "Baba Boutique",
+          slug: "baba-boutique",
+          status: "active",
+        },
+      });
+
+      const babaUser = await tx.user.create({
+        data: {
+          id: "user-baba",
+          email: "baba@baba-boutique.ml",
+          name: "Baba Traore",
+          status: "active",
+        },
+      });
+
+      await tx.credential.create({
+        data: {
+          id: "cred-baba",
+          userId: babaUser.id,
+          passwordHash: TEST_PASSWORD_HASH,
+        },
+      });
+
+      await tx.membership.create({
+        data: {
+          id: "org-baba:user-baba",
+          organizationId: babaOrg.id,
+          userId: babaUser.id,
           role: "admin",
           status: "active",
         },

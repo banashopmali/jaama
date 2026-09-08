@@ -1,4 +1,4 @@
-name: Monorepo CI Pipeline
+name: Sprint 1 Monorepo & Browser Certification CI Pipeline
 
 on:
   push:
@@ -8,7 +8,7 @@ on:
 
 jobs:
   validate:
-    name: Validate Monorepo
+    name: 1. Monorepo Quality Gates & HTTP E2E
     runs-on: ubuntu-latest
 
     services:
@@ -63,8 +63,134 @@ jobs:
       - name: Run Typecheck
         run: pnpm typecheck
 
-      - name: Run Tests
+      - name: Run Unit & HTTP E2E Tests
         run: pnpm test
 
-      - name: Run Build
+      - name: Run Monorepo Build
         run: pnpm build
+
+  e2e-browser:
+    name: 2. Real Browser Playwright Certification
+    needs: validate
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: jaama_user
+          POSTGRES_PASSWORD: jaama_pass
+          POSTGRES_DB: jaama_db
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    env:
+      DATABASE_URL: "postgresql://jaama_user:jaama_pass@localhost:5432/jaama_db?schema=public"
+      NEXT_PUBLIC_API_URL: "http://127.0.0.1:3001"
+      WEB_URL: "http://127.0.0.1:3000"
+      CORS_ALLOWED_ORIGINS: "http://127.0.0.1:3000"
+      SESSION_SECRET: "jaama-ci-e2e-session-secret-32-chars-min"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install pnpm
+        run: npm install -g pnpm@11.7.0
+
+      - name: Approve build scripts
+        run: pnpm approve-builds --all
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Generate Prisma Client
+        run: pnpm --filter @jaama/database db:generate
+
+      - name: Run Prisma Database Migrations
+        run: pnpm --filter @jaama/database db:migrate:deploy
+
+      - name: Seed Dedicated E2E Database
+        run: pnpm --filter @jaama/database db:seed
+
+      - name: Install Playwright Chromium Browser
+        run: pnpm --filter @jaama/web exec playwright install chromium --with-deps
+
+      - name: Build API and Web Applications
+        run: pnpm build
+
+      - name: Start API and Web Services
+        run: |
+          mkdir -p /tmp/jaama-logs
+          PORT=3001 NODE_ENV=test pnpm --filter @jaama/api dev > /tmp/jaama-logs/api.log 2>&1 &
+          echo "API_PID=$!" >> $GITHUB_ENV
+          NODE_ENV=production pnpm --filter @jaama/web exec next start -p 3000 > /tmp/jaama-logs/web.log 2>&1 &
+          echo "WEB_PID=$!" >> $GITHUB_ENV
+
+      - name: Wait for API and Web Services Readiness
+        run: |
+          echo "Polling API readiness at http://127.0.0.1:3001/health/readiness..."
+          API_READY=false
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3001/health/readiness > /dev/null; then
+              echo "API is READY on http://127.0.0.1:3001 (attempt $i)"
+              API_READY=true
+              break
+            fi
+            if ! kill -0 $API_PID 2>/dev/null; then
+              echo "API process exited unexpectedly! Log:"
+              cat /tmp/jaama-logs/api.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if [ "$API_READY" = "false" ]; then
+            echo "API readiness timeout after 60 seconds! Log:"
+            cat /tmp/jaama-logs/api.log
+            exit 1
+          fi
+
+          echo "Polling Web readiness at http://127.0.0.1:3000/auth/login..."
+          WEB_READY=false
+          for i in {1..60}; do
+            if curl --fail --silent http://127.0.0.1:3000/auth/login > /dev/null; then
+              echo "Web is READY on http://127.0.0.1:3000 (attempt $i)"
+              WEB_READY=true
+              break
+            fi
+            if ! kill -0 $WEB_PID 2>/dev/null; then
+              echo "Web process exited unexpectedly! Log:"
+              cat /tmp/jaama-logs/web.log
+              exit 1
+            fi
+            sleep 1
+          done
+
+          if [ "$WEB_READY" = "false" ]; then
+            echo "Web readiness timeout after 60 seconds! Log:"
+            cat /tmp/jaama-logs/web.log
+            exit 1
+          fi
+
+      - name: Run Playwright Real Browser E2E Suite
+        run: pnpm --filter @jaama/web exec playwright test
+
+      - name: Output Diagnostic Logs on Failure
+        if: failure()
+        run: |
+          echo "=== API LOG ==="
+          cat /tmp/jaama-logs/api.log || true
+          echo "=== WEB LOG ==="
+          cat /tmp/jaama-logs/web.log || true
+
