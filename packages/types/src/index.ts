@@ -293,3 +293,326 @@ export function derivePaymentStatusFromMinor(totalMinor: number, paidMinor: numb
   if (paidMinor < totalMinor) return "PARTIALLY_PAID";
   return "PAID";
 }
+
+// =====================================================================
+// Sprint 2: African Commerce & Payments OS Foundation (JAA-S2-01)
+// =====================================================================
+
+export type PaymentIntentStatus =
+  | "REQUIRES_PAYMENT"
+  | "PROCESSING"
+  | "PARTIALLY_PAID"
+  | "PAID"
+  | "CANCELLED"
+  | "EXPIRED";
+
+export type PaymentAttemptStatus =
+  | "CREATED"
+  | "PENDING_PROVIDER"
+  | "PROCESSING"
+  | "SUCCEEDED"
+  | "FAILED"
+  | "CANCELLED"
+  | "EXPIRED";
+
+export type SettlementStatus =
+  | "PENDING"
+  | "PARTIALLY_SETTLED"
+  | "SETTLED"
+  | "RECONCILIATION_REQUIRED"
+  | "RECONCILED"
+  | "FAILED";
+
+export type WebhookEventStatus =
+  | "RECEIVED"
+  | "PROCESSING"
+  | "PROCESSED"
+  | "FAILED"
+  | "IGNORED";
+
+export type PaymentReconciliationStatus =
+  | "MATCHED"
+  | "DISCREPANCY_AMOUNT"
+  | "DISCREPANCY_STATUS"
+  | "UNMATCHED_PROVIDER"
+  | "UNMATCHED_INTERNAL";
+
+export type PaymentProviderType =
+  | "mock"
+  | "wave"
+  | "orange_money"
+  | "moov_money"
+  | "mtn_momo"
+  | "bank_transfer";
+
+export type PaymentErrorCode =
+  | "INVALID_STATE_TRANSITION"
+  | "PROVIDER_NOT_CONFIGURED"
+  | "PROVIDER_UNAVAILABLE"
+  | "INVALID_SIGNATURE"
+  | "IDEMPOTENCY_CONFLICT"
+  | "AMOUNT_MISMATCH"
+  | "CURRENCY_MISMATCH"
+  | "PAYMENT_INTENT_EXPIRED"
+  | "PAYMENT_INTENT_ALREADY_PAID"
+  | "TENANT_MISMATCH"
+  | "UNAUTHORIZED_PROVIDER_ACTION"
+  | "PROVIDER_ERROR";
+
+export class PaymentDomainError extends Error {
+  public readonly code: PaymentErrorCode;
+  public readonly details?: Record<string, unknown>;
+
+  constructor(code: PaymentErrorCode, message: string, details?: Record<string, unknown>) {
+    super(`[${code}] ${message}`);
+    this.name = "PaymentDomainError";
+    this.code = code;
+    this.details = details;
+    Object.setPrototypeOf(this, PaymentDomainError.prototype);
+  }
+}
+
+export interface PaymentProviderConfig {
+  id: string;
+  organizationId: string;
+  provider: PaymentProviderType;
+  isEnabled: boolean;
+  isTestMode: boolean;
+  apiKeyEncrypted?: string | null;
+  apiSecretEncrypted?: string | null;
+  webhookSecret?: string | null;
+  merchantId?: string | null;
+  metadataJson?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PaymentIntent {
+  id: string;
+  organizationId: string;
+  reference: string;
+  amountMinor: number;
+  currencyCode: CurrencyCode;
+  status: PaymentIntentStatus;
+  saleId?: string | null;
+  orderId?: string | null;
+  invoiceId?: string | null;
+  customerId?: string | null;
+  description?: string | null;
+  metadataJson?: string;
+  expiresAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface PaymentAttempt {
+  id: string;
+  organizationId: string;
+  paymentIntentId: string;
+  provider: PaymentProviderType;
+  amountMinor: number;
+  currencyCode: CurrencyCode;
+  status: PaymentAttemptStatus;
+  idempotencyKey: string;
+  providerReference?: string | null;
+  errorCode?: string | null;
+  errorMessage?: string | null;
+  metadataJson?: string;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ProviderTransaction {
+  id: string;
+  organizationId: string;
+  paymentAttemptId: string;
+  provider: PaymentProviderType;
+  providerTransactionId: string;
+  statusRaw: string;
+  feeMinor: number;
+  netMinor: number;
+  rawPayloadJson: string;
+  occurredAt: Date;
+  createdAt: Date;
+}
+
+export interface Settlement {
+  id: string;
+  organizationId: string;
+  provider: PaymentProviderType;
+  reference: string;
+  currencyCode: CurrencyCode;
+  totalAmountMinor: number;
+  settledAmountMinor: number;
+  feeAmountMinor: number;
+  status: SettlementStatus;
+  settledAt?: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+}
+
+export interface ReconciliationRecord {
+  id: string;
+  organizationId: string;
+  provider: PaymentProviderType;
+  providerTransactionId?: string | null;
+  paymentId?: string | null;
+  settlementId?: string | null;
+  status: PaymentReconciliationStatus;
+  discrepancyType?: string | null;
+  detailsJson?: string;
+  createdAt: Date;
+  resolvedAt?: Date | null;
+}
+
+export interface WebhookEvent {
+  id: string;
+  organizationId?: string | null;
+  provider: PaymentProviderType;
+  eventId: string;
+  eventType: string;
+  payloadJson: string;
+  headersJson?: string;
+  signatureVerified: boolean;
+  status: WebhookEventStatus;
+  processedAt?: Date | null;
+  errorMessage?: string | null;
+  createdAt: Date;
+}
+
+// State Machine Transition Rules & Pure Validators
+
+export const VALID_PAYMENT_INTENT_TRANSITIONS: Record<PaymentIntentStatus, ReadonlyArray<PaymentIntentStatus>> = {
+  REQUIRES_PAYMENT: ["PROCESSING", "CANCELLED", "EXPIRED"],
+  PROCESSING: ["PARTIALLY_PAID", "PAID", "REQUIRES_PAYMENT", "CANCELLED", "EXPIRED"],
+  PARTIALLY_PAID: ["PROCESSING", "PAID", "CANCELLED"],
+  PAID: [],
+  CANCELLED: [],
+  EXPIRED: [],
+};
+
+export function isValidPaymentIntentTransition(
+  from: PaymentIntentStatus,
+  to: PaymentIntentStatus
+): boolean {
+  return VALID_PAYMENT_INTENT_TRANSITIONS[from].includes(to);
+}
+
+export function assertValidPaymentIntentTransition(
+  from: PaymentIntentStatus,
+  to: PaymentIntentStatus
+): void {
+  if (!isValidPaymentIntentTransition(from, to)) {
+    throw new PaymentDomainError(
+      "INVALID_STATE_TRANSITION",
+      `Invalid PaymentIntent transition from ${from} to ${to}`,
+      { from, to }
+    );
+  }
+}
+
+export const VALID_PAYMENT_ATTEMPT_TRANSITIONS: Record<PaymentAttemptStatus, ReadonlyArray<PaymentAttemptStatus>> = {
+  CREATED: ["PENDING_PROVIDER", "FAILED", "CANCELLED"],
+  PENDING_PROVIDER: ["PROCESSING", "SUCCEEDED", "FAILED", "EXPIRED"],
+  PROCESSING: ["SUCCEEDED", "FAILED", "CANCELLED", "EXPIRED"],
+  SUCCEEDED: [],
+  FAILED: [],
+  CANCELLED: [],
+  EXPIRED: [],
+};
+
+export function isValidPaymentAttemptTransition(
+  from: PaymentAttemptStatus,
+  to: PaymentAttemptStatus
+): boolean {
+  return VALID_PAYMENT_ATTEMPT_TRANSITIONS[from].includes(to);
+}
+
+export function assertValidPaymentAttemptTransition(
+  from: PaymentAttemptStatus,
+  to: PaymentAttemptStatus
+): void {
+  if (!isValidPaymentAttemptTransition(from, to)) {
+    throw new PaymentDomainError(
+      "INVALID_STATE_TRANSITION",
+      `Invalid PaymentAttempt transition from ${from} to ${to}`,
+      { from, to }
+    );
+  }
+}
+
+export const VALID_SETTLEMENT_TRANSITIONS: Record<SettlementStatus, ReadonlyArray<SettlementStatus>> = {
+  PENDING: ["PARTIALLY_SETTLED", "SETTLED", "RECONCILIATION_REQUIRED", "FAILED"],
+  PARTIALLY_SETTLED: ["SETTLED", "RECONCILIATION_REQUIRED", "FAILED"],
+  SETTLED: ["RECONCILIATION_REQUIRED"],
+  RECONCILIATION_REQUIRED: ["RECONCILED", "FAILED"],
+  RECONCILED: [],
+  FAILED: [],
+};
+
+export function isValidSettlementTransition(
+  from: SettlementStatus,
+  to: SettlementStatus
+): boolean {
+  return VALID_SETTLEMENT_TRANSITIONS[from].includes(to);
+}
+
+export function assertValidSettlementTransition(
+  from: SettlementStatus,
+  to: SettlementStatus
+): void {
+  if (!isValidSettlementTransition(from, to)) {
+    throw new PaymentDomainError(
+      "INVALID_STATE_TRANSITION",
+      `Invalid Settlement transition from ${from} to ${to}`,
+      { from, to }
+    );
+  }
+}
+
+// Payment Provider Contract
+export interface ProviderAttemptResult {
+  success: boolean;
+  providerReference: string;
+  providerStatus: string;
+  paymentUrl?: string;
+  rawResponse?: Record<string, unknown>;
+  errorCode?: string;
+  errorMessage?: string;
+}
+
+export interface WebhookParseResult {
+  eventId: string;
+  eventType: string;
+  providerReference: string;
+  status: PaymentAttemptStatus;
+  amountMinor: number;
+  currencyCode: CurrencyCode;
+  feeMinor?: number;
+  netMinor?: number;
+  rawPayload: Record<string, unknown>;
+}
+
+export interface PaymentProvider {
+  readonly providerType: PaymentProviderType;
+
+  createPaymentAttempt(
+    config: PaymentProviderConfig,
+    intent: PaymentIntent,
+    attempt: PaymentAttempt
+  ): Promise<ProviderAttemptResult>;
+
+  verifyWebhookSignature(
+    headers: Record<string, string | string[] | undefined>,
+    rawBody: string | Buffer,
+    webhookSecret: string
+  ): Promise<boolean>;
+
+  parseWebhookEvent(payload: Record<string, unknown>): WebhookParseResult;
+
+  checkTransactionStatus(
+    config: PaymentProviderConfig,
+    providerReference: string
+  ): Promise<ProviderAttemptResult>;
+}
+

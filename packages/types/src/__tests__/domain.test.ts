@@ -11,6 +11,13 @@ import {
   Sale,
   SaleStatus,
   PaymentStatus,
+  isValidPaymentIntentTransition,
+  assertValidPaymentIntentTransition,
+  isValidPaymentAttemptTransition,
+  assertValidPaymentAttemptTransition,
+  isValidSettlementTransition,
+  assertValidSettlementTransition,
+  PaymentDomainError,
 } from "../index";
 
 describe("JAAMA Domain & Business Contracts (JAA-S0-07)", () => {
@@ -138,4 +145,70 @@ describe("JAAMA Domain & Business Contracts (JAA-S0-07)", () => {
       expect(creditSale.remainingMinor).toBe(25000);
     });
   });
+
+  describe("Sprint 2 Payment Abstraction State Machines (JAA-S2-01)", () => {
+    it("validates PaymentIntent state machine transitions", () => {
+      // Valid transitions
+      expect(isValidPaymentIntentTransition("REQUIRES_PAYMENT", "PROCESSING")).toBe(true);
+      expect(isValidPaymentIntentTransition("PROCESSING", "PAID")).toBe(true);
+      expect(isValidPaymentIntentTransition("PROCESSING", "PARTIALLY_PAID")).toBe(true);
+      expect(isValidPaymentIntentTransition("PARTIALLY_PAID", "PAID")).toBe(true);
+      expect(isValidPaymentIntentTransition("REQUIRES_PAYMENT", "CANCELLED")).toBe(true);
+      expect(isValidPaymentIntentTransition("REQUIRES_PAYMENT", "EXPIRED")).toBe(true);
+
+      // Invalid transitions
+      expect(isValidPaymentIntentTransition("PAID", "PROCESSING")).toBe(false);
+      expect(isValidPaymentIntentTransition("CANCELLED", "PAID")).toBe(false);
+      expect(isValidPaymentIntentTransition("EXPIRED", "REQUIRES_PAYMENT")).toBe(false);
+
+      expect(() => {
+        assertValidPaymentIntentTransition("PAID", "PROCESSING");
+      }).toThrow(PaymentDomainError);
+    });
+
+    it("validates PaymentAttempt state machine transitions", () => {
+      // Valid transitions
+      expect(isValidPaymentAttemptTransition("CREATED", "PENDING_PROVIDER")).toBe(true);
+      expect(isValidPaymentAttemptTransition("PENDING_PROVIDER", "PROCESSING")).toBe(true);
+      expect(isValidPaymentAttemptTransition("PROCESSING", "SUCCEEDED")).toBe(true);
+      expect(isValidPaymentAttemptTransition("PROCESSING", "FAILED")).toBe(true);
+
+      // Terminal states
+      expect(isValidPaymentAttemptTransition("SUCCEEDED", "FAILED")).toBe(false);
+      expect(isValidPaymentAttemptTransition("FAILED", "PROCESSING")).toBe(false);
+
+      expect(() => {
+        assertValidPaymentAttemptTransition("SUCCEEDED", "CREATED");
+      }).toThrow(PaymentDomainError);
+    });
+
+    it("validates Settlement state machine transitions", () => {
+      // Valid transitions
+      expect(isValidSettlementTransition("PENDING", "SETTLED")).toBe(true);
+      expect(isValidSettlementTransition("PENDING", "PARTIALLY_SETTLED")).toBe(true);
+      expect(isValidSettlementTransition("SETTLED", "RECONCILIATION_REQUIRED")).toBe(true);
+      expect(isValidSettlementTransition("RECONCILIATION_REQUIRED", "RECONCILED")).toBe(true);
+
+      // Terminal states
+      expect(isValidSettlementTransition("RECONCILED", "PENDING")).toBe(false);
+      expect(isValidSettlementTransition("FAILED", "SETTLED")).toBe(false);
+
+      expect(() => {
+        assertValidSettlementTransition("RECONCILED", "PENDING");
+      }).toThrow(PaymentDomainError);
+    });
+
+    it("creates PaymentDomainError with code and structured details", () => {
+      const err = new PaymentDomainError("AMOUNT_MISMATCH", "Amounts do not match", {
+        expected: 5000,
+        actual: 4000,
+      });
+
+      expect(err.name).toBe("PaymentDomainError");
+      expect(err.code).toBe("AMOUNT_MISMATCH");
+      expect(err.details).toEqual({ expected: 5000, actual: 4000 });
+      expect(err.message).toContain("[AMOUNT_MISMATCH]");
+    });
+  });
 });
+

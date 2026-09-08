@@ -21,6 +21,13 @@ export async function seedPostgresDatabase(client: PrismaClient = prisma) {
       await tx.expense.deleteMany();
       await tx.supplier.deleteMany();
 
+      await tx.reconciliationRecord.deleteMany();
+      await tx.providerTransaction.deleteMany();
+      await tx.paymentAttempt.deleteMany();
+      await tx.paymentIntent.deleteMany();
+      await tx.settlement.deleteMany();
+      await tx.webhookEvent.deleteMany();
+      await tx.paymentProviderConfig.deleteMany();
       await tx.idempotencyRecord.deleteMany();
       await tx.outboxEvent.deleteMany();
       await tx.auditEvent.deleteMany();

@@ -25,6 +25,7 @@ import { NotificationsModule } from "./notifications/notifications.module";
 import { TeamModule } from "./team/team.module";
 import { SettingsModule } from "./settings/settings.module";
 import { ReconciliationModule } from "./reconciliation/reconciliation.module";
+import { PaymentsFoundationModule } from "./payments-foundation/payments-foundation.module";
 import { CorrelationMiddleware } from "./common/correlation.middleware";
 import { GlobalExceptionFilter } from "./common/global-exception.filter";
 import { AuthTenantGuard } from "./common/auth-tenant.guard";
@@ -56,6 +57,7 @@ import { AuthTenantGuard } from "./common/auth-tenant.guard";
     TeamModule,
     SettingsModule,
     ReconciliationModule,
+    PaymentsFoundationModule,
   ],
   controllers: [HealthController, SalesController, AuthController],
   providers: [

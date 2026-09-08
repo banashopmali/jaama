@@ -94,6 +94,59 @@ enum PurchaseStatus {
   CANCELLED
 }
 
+enum PaymentIntentStatus {
+  REQUIRES_PAYMENT
+  PROCESSING
+  PARTIALLY_PAID
+  PAID
+  CANCELLED
+  EXPIRED
+}
+
+enum PaymentAttemptStatus {
+  CREATED
+  PENDING_PROVIDER
+  PROCESSING
+  SUCCEEDED
+  FAILED
+  CANCELLED
+  EXPIRED
+}
+
+enum SettlementStatus {
+  PENDING
+  PARTIALLY_SETTLED
+  SETTLED
+  RECONCILIATION_REQUIRED
+  RECONCILED
+  FAILED
+}
+
+enum WebhookEventStatus {
+  RECEIVED
+  PROCESSING
+  PROCESSED
+  FAILED
+  IGNORED
+}
+
+enum PaymentReconciliationStatus {
+  MATCHED
+  DISCREPANCY_AMOUNT
+  DISCREPANCY_STATUS
+  UNMATCHED_PROVIDER
+  UNMATCHED_INTERNAL
+}
+
+enum PaymentProviderType {
+  mock
+  wave
+  orange_money
+  moov_money
+  mtn_momo
+  bank_transfer
+}
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
@@ -165,6 +218,13 @@ model Organization {
   idempotencyRecords IdempotencyRecord[]
   invitations        OrganizationInvitation[]
   importBatches      ImportBatch[]
+  paymentProviderConfigs PaymentProviderConfig[]
+  paymentIntents         PaymentIntent[]
+  paymentAttempts        PaymentAttempt[]
+  providerTransactions   ProviderTransaction[]
+  settlements            Settlement[]
+  reconciliationRecords  ReconciliationRecord[]
+  webhookEvents          WebhookEvent[]
 }
 
 model OrganizationInvitation {
@@ -215,6 +275,7 @@ model Customer {
   sales    Sale[]
   quotes   Quote[]
   invoices Invoice[]
+  paymentIntents PaymentIntent[]
 
   @@unique([organizationId, id])
   @@index([organizationId, name])
@@ -300,6 +361,7 @@ model Sale {
   lines    SaleLine[]
   payments Payment[]
   invoices Invoice[]
+  paymentIntents PaymentIntent[]
 
   @@unique([organizationId, id])
   @@unique([organizationId, reference])
@@ -335,6 +397,8 @@ model Payment {
   amountMinor    Int
   status         PaymentRecordStatus @default(SUCCESS)
   recordedAt     DateTime            @default(now())
+
+  reconciliationRecords ReconciliationRecord[]
 
   @@unique([organizationId, id])
   @@index([organizationId, saleId])
@@ -624,4 +688,164 @@ model ImportBatch {
   @@unique([organizationId, id])
   @@index([organizationId, entityType])
 }
+
+model PaymentProviderConfig {
+  id                 String              @id @default(uuid())
+  organizationId     String
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider           PaymentProviderType
+  isEnabled          Boolean             @default(true)
+  isTestMode         Boolean             @default(true)
+  apiKeyEncrypted    String?
+  apiSecretEncrypted String?
+  webhookSecret      String?
+  merchantId         String?
+  metadataJson       String              @default("{}")
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, provider])
+  @@index([organizationId, isEnabled])
+}
+
+model PaymentIntent {
+  id             String              @id @default(uuid())
+  organizationId String
+  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  reference      String
+  amountMinor    Int
+  currencyCode   String              @default("XOF")
+  status         PaymentIntentStatus @default(REQUIRES_PAYMENT)
+  saleId         String?
+  sale           Sale?               @relation(fields: [organizationId, saleId], references: [organizationId, id], onDelete: SetNull)
+  customerId     String?
+  customer       Customer?           @relation(fields: [organizationId, customerId], references: [organizationId, id], onDelete: SetNull)
+  description    String?
+  metadataJson   String              @default("{}")
+  expiresAt      DateTime
+  createdAt      DateTime            @default(now())
+  updatedAt      DateTime            @updatedAt
+
+  attempts PaymentAttempt[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, reference])
+  @@index([organizationId, status])
+  @@index([organizationId, saleId])
+}
+
+model PaymentAttempt {
+  id                String               @id @default(uuid())
+  organizationId    String
+  organization      Organization         @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentIntentId   String
+  paymentIntent     PaymentIntent        @relation(fields: [organizationId, paymentIntentId], references: [organizationId, id], onDelete: Cascade)
+  provider          PaymentProviderType
+  amountMinor       Int
+  currencyCode      String               @default("XOF")
+  status            PaymentAttemptStatus @default(CREATED)
+  idempotencyKey    String
+  providerReference String?
+  errorCode         String?
+  errorMessage      String?
+  metadataJson      String               @default("{}")
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+
+  transactions ProviderTransaction[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, idempotencyKey])
+  @@index([organizationId, paymentIntentId])
+  @@index([organizationId, provider, status])
+  @@index([providerReference])
+}
+
+model ProviderTransaction {
+  id                    String              @id @default(uuid())
+  organizationId        String
+  organization          Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  paymentAttemptId      String
+  paymentAttempt        PaymentAttempt      @relation(fields: [organizationId, paymentAttemptId], references: [organizationId, id], onDelete: Cascade)
+  provider              PaymentProviderType
+  providerTransactionId String
+  statusRaw             String
+  feeMinor              Int                 @default(0)
+  netMinor              Int
+  rawPayloadJson        String              @default("{}")
+  occurredAt            DateTime            @default(now())
+  createdAt             DateTime            @default(now())
+
+  reconciliationRecords ReconciliationRecord[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, provider, providerTransactionId])
+  @@index([organizationId, paymentAttemptId])
+}
+
+model Settlement {
+  id                 String              @id @default(uuid())
+  organizationId     String
+  organization       Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider           PaymentProviderType
+  reference          String
+  currencyCode       String              @default("XOF")
+  totalAmountMinor   Int
+  settledAmountMinor Int                 @default(0)
+  feeAmountMinor     Int                 @default(0)
+  status             SettlementStatus    @default(PENDING)
+  settledAt          DateTime?
+  createdAt          DateTime            @default(now())
+  updatedAt          DateTime            @updatedAt
+
+  reconciliationRecords ReconciliationRecord[]
+
+  @@unique([organizationId, id])
+  @@unique([organizationId, reference])
+  @@index([organizationId, provider, status])
+}
+
+model ReconciliationRecord {
+  id                    String                      @id @default(uuid())
+  organizationId        String
+  organization          Organization                @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider              PaymentProviderType
+  providerTransactionId String?
+  providerTransaction   ProviderTransaction?        @relation(fields: [organizationId, providerTransactionId], references: [organizationId, id], onDelete: SetNull)
+  paymentId             String?
+  payment               Payment?                    @relation(fields: [organizationId, paymentId], references: [organizationId, id], onDelete: SetNull)
+  settlementId          String?
+  settlement            Settlement?                 @relation(fields: [organizationId, settlementId], references: [organizationId, id], onDelete: SetNull)
+  status                PaymentReconciliationStatus @default(MATCHED)
+  discrepancyType       String?
+  detailsJson           String                      @default("{}")
+  createdAt             DateTime                    @default(now())
+  resolvedAt            DateTime?
+
+  @@unique([organizationId, id])
+  @@index([organizationId, status])
+  @@index([organizationId, provider])
+}
+
+model WebhookEvent {
+  id                String              @id @default(uuid())
+  organizationId    String?
+  organization      Organization?       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  provider          PaymentProviderType
+  eventId           String
+  eventType         String
+  payloadJson       String
+  headersJson       String              @default("{}")
+  signatureVerified Boolean             @default(false)
+  status            WebhookEventStatus  @default(RECEIVED)
+  processedAt       DateTime?
+  errorMessage      String?
+  createdAt         DateTime            @default(now())
+
+  @@unique([provider, eventId])
+  @@index([organizationId, status])
+  @@index([status, createdAt])
+}
+
 
