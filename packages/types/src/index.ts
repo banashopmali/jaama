@@ -188,6 +188,7 @@ export interface Payment {
   method: PaymentMethodCode;
   amountMinor: number;
   status: "SUCCESS" | "FAILED" | "REVERSED";
+  sourcePaymentAttemptId?: string | null;
   recordedAt: Date;
 }
 
@@ -470,11 +471,12 @@ export interface ReconciliationRecord {
 
 export interface WebhookEvent {
   id: string;
-  organizationId?: string | null;
+  organizationId: string;
   provider: PaymentProviderType;
   eventId: string;
   eventType: string;
   payloadJson: string;
+  payloadHash: string;
   headersJson?: string;
   signatureVerified: boolean;
   status: WebhookEventStatus;
@@ -655,5 +657,44 @@ export interface PaymentProvider {
     config: PaymentProviderConfig,
     providerReference: string
   ): Promise<ProviderAttemptResult>;
+}
+
+export function validateProviderAttemptResult(
+  result: unknown,
+  attempt: { amountMinor: number }
+): asserts result is ProviderAttemptResult {
+  if (!result || typeof result !== "object") {
+    throw new PaymentDomainError("PROVIDER_ERROR", "Provider returned invalid or non-object result");
+  }
+  const r = result as Record<string, unknown>;
+  const validStates: ReadonlyArray<string> = ["PENDING_PROVIDER", "PROCESSING", "SUCCEEDED", "FAILED"];
+  if (typeof r.state !== "string" || !validStates.includes(r.state)) {
+    throw new PaymentDomainError(
+      "PROVIDER_ERROR",
+      `Provider returned unsupported normalized state: '${String(r.state)}'`
+    );
+  }
+
+  if (r.feeMinor !== undefined && r.feeMinor !== null) {
+    assertSafeIntegerAmount(r.feeMinor, "feeMinor", 0, attempt.amountMinor);
+  }
+
+  if (r.netMinor !== undefined && r.netMinor !== null) {
+    assertSafeIntegerAmount(r.netMinor, "netMinor", 0, attempt.amountMinor);
+  }
+
+  if (
+    r.feeMinor !== undefined &&
+    r.feeMinor !== null &&
+    r.netMinor !== undefined &&
+    r.netMinor !== null
+  ) {
+    if ((r.feeMinor as number) + (r.netMinor as number) !== attempt.amountMinor) {
+      throw new PaymentDomainError(
+        "AMOUNT_MISMATCH",
+        `Provider financial result invariant violated: feeMinor (${r.feeMinor}) + netMinor (${r.netMinor}) != attempt.amountMinor (${attempt.amountMinor})`
+      );
+    }
+  }
 }
 

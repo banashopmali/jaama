@@ -474,6 +474,6 @@ export class PurchasesService {
       });
 
       return responsePayload;
-    });
+    }, { maxWait: 15000, timeout: 30000 });
   }
 }

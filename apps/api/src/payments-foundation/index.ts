@@ -6,4 +6,5 @@ export * from "./webhook-event.service";
 export * from "./settlement.service";
 export * from "./payments-foundation.controller";
 export * from "./payment-webhooks.controller";
+export * from "./payment-finalization.service";
 export * from "./payments-foundation.module";

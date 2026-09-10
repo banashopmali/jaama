@@ -8,10 +8,33 @@ import {
   PaymentIntentService,
   WebhookEventService,
   SettlementService,
+  PaymentFinalizationService,
   PaymentDomainError,
   MockPaymentProvider,
 } from "../payments-foundation";
 import { SalesService } from "../sales/sales.service";
+
+class CountingMockProvider extends MockPaymentProvider {
+  public callCount = 0;
+  public requestedAmounts: number[] = [];
+
+  override async createPaymentAttempt(config: any, intent: any, attempt: any) {
+    this.callCount++;
+    this.requestedAmounts.push(attempt.amountMinor);
+    return super.createPaymentAttempt(config, intent, attempt);
+  }
+}
+
+class MalformedFeeMockProvider extends MockPaymentProvider {
+  override async createPaymentAttempt(config: any, intent: any, attempt: any) {
+    const res = await super.createPaymentAttempt(config, intent, attempt);
+    return {
+      ...res,
+      feeMinor: 500,
+      netMinor: attempt.amountMinor - 200,
+    };
+  }
+}
 
 describe("JAA-S2-01 — Payment Abstraction Foundation Hardening Tests", () => {
   let providerRegistry: PaymentProviderRegistry;
@@ -43,6 +66,17 @@ describe("JAA-S2-01 — Payment Abstraction Foundation Hardening Tests", () => {
       where: { id: "org-b" },
       update: { status: "active" },
       create: { id: "org-b", name: "Org B", slug: "org-b", status: "active" },
+    });
+
+    await prisma.paymentProviderConfig.upsert({
+      where: { organizationId_provider: { organizationId: "org-diallo", provider: "mock" } },
+      update: { webhookEndpointKey: "endpoint-org-a", webhookSecret: "secret_org_a_secure_key" },
+      create: {
+        organizationId: "org-diallo",
+        provider: "mock",
+        webhookEndpointKey: "endpoint-org-a",
+        webhookSecret: "secret_org_a_secure_key",
+      },
     });
 
     providerRegistry = new PaymentProviderRegistry();
@@ -173,7 +207,13 @@ describe("JAA-S2-01 — Payment Abstraction Foundation Hardening Tests", () => {
 
     // Verify webhook event was recorded under Org A
     const event = await prisma.webhookEvent.findUnique({
-      where: { provider_eventId: { provider: "mock", eventId: "evt_org_a_1" } },
+      where: {
+        organizationId_provider_eventId: {
+          organizationId: "org-diallo",
+          provider: "mock",
+          eventId: "evt_org_a_1",
+        },
+      },
     });
     expect(event?.organizationId).toBe("org-diallo");
   });
@@ -447,33 +487,134 @@ describe("JAA-S2-01 — Payment Abstraction Foundation Hardening Tests", () => {
     expect(paymentsAfterReplay.length).toBe(1);
   });
 
-  // 11. concurrent attempts cannot overcollect one PaymentIntent
-  it("11. prevents overcollection under concurrent execution using SELECT FOR UPDATE row locking", async () => {
+  // 11. true concurrent overcollection prevention & provider call count = 1
+  it("11. prevents overcollection and guarantees provider call count = 1 under true concurrent execution", async () => {
+    const countingProvider = new CountingMockProvider();
+    providerRegistry.register(countingProvider);
+
     const intent = await intentService.createPaymentIntent(orgAContext, {
       amountMinor: 10000,
     });
 
-    // First attempt succeeds for 10000
-    await intentService.createPaymentAttempt(orgAContext, intent.id, {
-      provider: "mock",
-      amountMinor: 10000,
-      idempotencyKey: "instant_succeed_first",
-    });
-
-    // Second attempt trying to collect another 10000 must fail deterministically
-    await expect(
+    // Launch Request A (10000) and Request B (10000) simultaneously with different idempotency keys
+    const [resA, resB] = await Promise.allSettled([
       intentService.createPaymentAttempt(orgAContext, intent.id, {
         provider: "mock",
         amountMinor: 10000,
-        idempotencyKey: "instant_succeed_second",
-      })
-    ).rejects.toThrow(PaymentDomainError);
+        idempotencyKey: "concurrent-full-req-a",
+      }),
+      intentService.createPaymentAttempt(orgAContext, intent.id, {
+        provider: "mock",
+        amountMinor: 10000,
+        idempotencyKey: "concurrent-full-req-b",
+      }),
+    ]);
 
+    const fulfilled = [resA, resB].filter((r) => r.status === "fulfilled");
+    const rejected = [resA, resB].filter((r) => r.status === "rejected");
+
+    // Exactly one operation reserves the collectible amount
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(1);
+
+    const rejectionReason = (rejected[0] as PromiseRejectedResult).reason;
+    expect(rejectionReason).toBeInstanceOf(PaymentDomainError);
+    expect(rejectionReason.code).toBe("AMOUNT_MISMATCH");
+
+    // Only one operation was allowed to call the provider adapter
+    expect(countingProvider.callCount).toBe(1);
+    expect(countingProvider.requestedAmounts).toEqual([10000]);
+
+    // Exactly one successful/active attempt exists in DB
     const attempts = await prisma.paymentAttempt.findMany({
-      where: { paymentIntentId: intent.id, status: "SUCCEEDED" },
+      where: { organizationId: "org-diallo", paymentIntentId: intent.id },
     });
     expect(attempts.length).toBe(1);
     expect(attempts[0].amountMinor).toBe(10000);
+  });
+
+  // 11b. partial reservation 6000 + 5000 on 10000 cannot both reach provider
+  it("11b. prevents partial over-reservation (6000 + 5000 on 10000) from reaching provider concurrently", async () => {
+    const countingProvider = new CountingMockProvider();
+    providerRegistry.register(countingProvider);
+
+    const intent = await intentService.createPaymentIntent(orgAContext, {
+      amountMinor: 10000,
+    });
+
+    const [resA, resB] = await Promise.allSettled([
+      intentService.createPaymentAttempt(orgAContext, intent.id, {
+        provider: "mock",
+        amountMinor: 6000,
+        idempotencyKey: "partial-req-6000",
+      }),
+      intentService.createPaymentAttempt(orgAContext, intent.id, {
+        provider: "mock",
+        amountMinor: 5000,
+        idempotencyKey: "partial-req-5000",
+      }),
+    ]);
+
+    const fulfilled = [resA, resB].filter((r) => r.status === "fulfilled");
+    const rejected = [resA, resB].filter((r) => r.status === "rejected");
+
+    expect(fulfilled.length).toBe(1);
+    expect(rejected.length).toBe(1);
+
+    const rejectionReason = (rejected[0] as PromiseRejectedResult).reason;
+    expect(rejectionReason).toBeInstanceOf(PaymentDomainError);
+    expect(rejectionReason.code).toBe("AMOUNT_MISMATCH");
+
+    // Only one reached provider adapter
+    expect(countingProvider.callCount).toBe(1);
+
+    // Sum of reserved active capacity in DB <= 10000
+    const activeAttempts = await prisma.paymentAttempt.findMany({
+      where: {
+        organizationId: "org-diallo",
+        paymentIntentId: intent.id,
+        status: { in: ["CREATED", "PENDING_PROVIDER", "PROCESSING", "SUCCEEDED"] },
+      },
+    });
+    const totalActiveMinor = activeAttempts.reduce((sum, a) => sum + a.amountMinor, 0);
+    expect(totalActiveMinor).toBeLessThanOrEqual(10000);
+  });
+
+  // 11c. concurrent same idempotency key creates one attempt / provider call
+  it("11c. guarantees simultaneous identical requests with same idempotency key call provider once and return identical result", async () => {
+    const countingProvider = new CountingMockProvider();
+    providerRegistry.register(countingProvider);
+
+    const intent = await intentService.createPaymentIntent(orgAContext, {
+      amountMinor: 25000,
+    });
+
+    const [resA, resB] = await Promise.all([
+      intentService.createPaymentAttempt(orgAContext, intent.id, {
+        provider: "mock",
+        amountMinor: 25000,
+        idempotencyKey: "concurrent-same-key-claim",
+      }),
+      intentService.createPaymentAttempt(orgAContext, intent.id, {
+        provider: "mock",
+        amountMinor: 25000,
+        idempotencyKey: "concurrent-same-key-claim",
+      }),
+    ]);
+
+    // Both callers receive the exact same logical result
+    expect(resA.attempt.id).toBe(resB.attempt.id);
+    expect(resA.attempt.amountMinor).toBe(25000);
+    expect(resB.attempt.amountMinor).toBe(25000);
+
+    // Provider call count = 1
+    expect(countingProvider.callCount).toBe(1);
+
+    // Exactly one PaymentAttempt exists in DB
+    const count = await prisma.paymentAttempt.count({
+      where: { organizationId: "org-diallo", idempotencyKey: "concurrent-same-key-claim" },
+    });
+    expect(count).toBe(1);
   });
 
   // 12. same idempotency key + same payload => replay
@@ -604,4 +745,336 @@ describe("JAA-S2-01 — Payment Abstraction Foundation Hardening Tests", () => {
       })
     ).rejects.toThrow("PaymentIntent '" + intentA.id + "' not found");
   });
+
+  // 18. sync + webhook confirmation race creates exactly one Payment
+  it("18. creates exactly one Payment when synchronous confirmation and webhook confirmation race", async () => {
+    const sale = await salesService.createSale(orgAContext, {
+      lines: [{ productId: "prod-004", quantity: 1, unitPriceMinor: 6500 }],
+    });
+
+    const intent = await intentService.createPaymentIntent(orgAContext, {
+      saleId: sale.id,
+      amountMinor: 6500,
+    });
+
+    const config = await prisma.paymentProviderConfig.findUniqueOrThrow({
+      where: { organizationId_provider: { organizationId: "org-diallo", provider: "mock" } },
+    });
+
+    // Create attempt in PENDING_PROVIDER
+    const { attempt } = await intentService.createPaymentAttempt(orgAContext, intent.id, {
+      provider: "mock",
+      amountMinor: 6500,
+      idempotencyKey: "race-sync-webhook-key",
+    });
+
+    const payload = {
+      id: "evt_race_sync_webhook",
+      type: "payment.succeeded",
+      data: {
+        providerReference: attempt.providerReference,
+        status: "SUCCEEDED",
+        amountMinor: 6500,
+        currencyCode: "XOF",
+        feeMinor: 65,
+        netMinor: 6435,
+      },
+    };
+    const rawBody = Buffer.from(JSON.stringify(payload));
+    const sig = crypto.createHmac("sha256", config.webhookSecret!).update(rawBody).digest("hex");
+
+    const finalizationService = new PaymentFinalizationService(prisma);
+
+    const [syncRes, webhookRes] = await Promise.allSettled([
+      prisma.$transaction(async (tx) => {
+        return finalizationService.finalizeAttemptSuccess(tx, {
+          organizationId: "org-diallo",
+          attemptId: attempt.id,
+          provider: "mock",
+          providerReference: attempt.providerReference!,
+          providerStatus: "CONFIRMED",
+          feeMinor: 65,
+          netMinor: 6435,
+          actorId: orgAContext.actorId,
+        });
+      }),
+      webhookService.handleWebhook(
+        "mock",
+        config.webhookEndpointKey,
+        { "x-mock-signature": sig },
+        rawBody,
+        payload
+      ),
+    ]);
+
+    expect(syncRes.status).toBe("fulfilled");
+    expect(webhookRes.status).toBe("fulfilled");
+
+    // Exactly 1 Payment created in database
+    const payments = await prisma.payment.findMany({
+      where: { organizationId: "org-diallo", saleId: sale.id },
+    });
+    expect(payments.length).toBe(1);
+    expect(payments[0].sourcePaymentAttemptId).toBe(attempt.id);
+    expect(payments[0].amountMinor).toBe(6500);
+
+    // Sale is fully paid
+    const updatedSale = await prisma.sale.findUniqueOrThrow({
+      where: { organizationId_id: { organizationId: "org-diallo", id: sale.id } },
+    });
+    expect(updatedSale.paidMinor).toBe(6500);
+    expect(updatedSale.remainingMinor).toBe(0);
+    expect(updatedSale.paymentStatus).toBe("PAID");
+  });
+
+  // 19. two webhook success events racing on one partial attempt create one Payment
+  it("19. creates exactly one Payment when two webhook success events race on the same attempt", async () => {
+    const sale = await salesService.createSale(orgAContext, {
+      lines: [{ productId: "prod-004", quantity: 2, unitPriceMinor: 5000 }],
+    });
+
+    const intent = await intentService.createPaymentIntent(orgAContext, {
+      saleId: sale.id,
+      amountMinor: 10000,
+    });
+
+    const { attempt } = await intentService.createPaymentAttempt(orgAContext, intent.id, {
+      provider: "mock",
+      amountMinor: 4000,
+      idempotencyKey: "k-race-two-webhooks",
+    });
+
+    const config = await prisma.paymentProviderConfig.findUniqueOrThrow({
+      where: { organizationId_provider: { organizationId: "org-diallo", provider: "mock" } },
+    });
+
+    const makeWebhookCall = (eventId: string) => {
+      const payload = {
+        id: eventId,
+        type: "payment.succeeded",
+        data: {
+          providerReference: attempt.providerReference,
+          status: "SUCCEEDED",
+          amountMinor: 4000,
+          currencyCode: "XOF",
+          feeMinor: 40,
+          netMinor: 3960,
+        },
+      };
+      const rawBody = Buffer.from(JSON.stringify(payload));
+      const sig = crypto.createHmac("sha256", config.webhookSecret!).update(rawBody).digest("hex");
+      return webhookService.handleWebhook(
+        "mock",
+        config.webhookEndpointKey,
+        { "x-mock-signature": sig },
+        rawBody,
+        payload
+      );
+    };
+
+    const results = await Promise.allSettled([
+      makeWebhookCall("evt_race_webhook_1"),
+      makeWebhookCall("evt_race_webhook_2"),
+    ]);
+
+    expect(results[0].status).toBe("fulfilled");
+    expect(results[1].status).toBe("fulfilled");
+
+    // Exactly 1 Payment created for this attempt
+    const payments = await prisma.payment.findMany({
+      where: { organizationId: "org-diallo", sourcePaymentAttemptId: attempt.id },
+    });
+    expect(payments.length).toBe(1);
+    expect(payments[0].amountMinor).toBe(4000);
+  });
+
+  // 20. malformed provider fee/net rejected
+  it("20. rejects malformed provider financial result (fee + net != amount) and prevents writing corrupted data", async () => {
+    const malformedProvider = new MalformedFeeMockProvider();
+    providerRegistry.register(malformedProvider);
+
+    const intent = await intentService.createPaymentIntent(orgAContext, {
+      amountMinor: 10000,
+    });
+
+    await expect(
+      intentService.createPaymentAttempt(orgAContext, intent.id, {
+        provider: "mock",
+        amountMinor: 10000,
+        idempotencyKey: "k-malformed-provider-test",
+      })
+    ).rejects.toThrow("Provider financial result invariant violated");
+
+    // No ProviderTransaction should be saved
+    const txs = await prisma.providerTransaction.findMany({
+      where: { organizationId: "org-diallo" },
+    });
+    const malformedTx = txs.find((t) => t.feeMinor === 500 && t.netMinor === 9800);
+    expect(malformedTx).toBeUndefined();
+  });
+
+  // 21. same webhook event ID + same hash => replay
+  it("21. returns ALREADY_PROCESSED when same webhook event ID and identical payload hash is delivered", async () => {
+    const config = await prisma.paymentProviderConfig.findUniqueOrThrow({
+      where: { organizationId_provider: { organizationId: "org-diallo", provider: "mock" } },
+    });
+
+    const intent = await intentService.createPaymentIntent(orgAContext, { amountMinor: 8000 });
+    const { attempt } = await intentService.createPaymentAttempt(orgAContext, intent.id, {
+      provider: "mock",
+      idempotencyKey: "k-replay-hash-test",
+    });
+
+    const payload = {
+      id: "evt_replay_same_hash",
+      type: "payment.succeeded",
+      data: {
+        providerReference: attempt.providerReference,
+        status: "SUCCEEDED",
+        amountMinor: 8000,
+        currencyCode: "XOF",
+        feeMinor: 80,
+        netMinor: 7920,
+      },
+    };
+    const rawBody = Buffer.from(JSON.stringify(payload));
+    const sig = crypto.createHmac("sha256", config.webhookSecret!).update(rawBody).digest("hex");
+
+    const first = await webhookService.handleWebhook(
+      "mock",
+      config.webhookEndpointKey,
+      { "x-mock-signature": sig },
+      rawBody,
+      payload
+    );
+    expect(first.status).toBe("SUCCESS");
+
+    // Replay with identical payload and hash
+    const second = await webhookService.handleWebhook(
+      "mock",
+      config.webhookEndpointKey,
+      { "x-mock-signature": sig },
+      rawBody,
+      payload
+    );
+    expect(second.status).toBe("ALREADY_PROCESSED");
+    expect(second.eventId).toBe("evt_replay_same_hash");
+  });
+
+  // 22. same webhook event ID + different hash => conflict
+  it("22. rejects with IDEMPOTENCY_CONFLICT when same webhook event ID is received with mutated payload hash", async () => {
+    const config = await prisma.paymentProviderConfig.findUniqueOrThrow({
+      where: { organizationId_provider: { organizationId: "org-diallo", provider: "mock" } },
+    });
+
+    const intent = await intentService.createPaymentIntent(orgAContext, { amountMinor: 8000 });
+    const { attempt } = await intentService.createPaymentAttempt(orgAContext, intent.id, {
+      provider: "mock",
+      idempotencyKey: "k-conflict-hash-test",
+    });
+
+    const payload1 = {
+      id: "evt_mutated_hash_conflict",
+      type: "payment.succeeded",
+      data: {
+        providerReference: attempt.providerReference,
+        status: "SUCCEEDED",
+        amountMinor: 8000,
+        currencyCode: "XOF",
+        feeMinor: 80,
+        netMinor: 7920,
+      },
+    };
+    const rawBody1 = Buffer.from(JSON.stringify(payload1));
+    const sig1 = crypto.createHmac("sha256", config.webhookSecret!).update(rawBody1).digest("hex");
+
+    await webhookService.handleWebhook(
+      "mock",
+      config.webhookEndpointKey,
+      { "x-mock-signature": sig1 },
+      rawBody1,
+      payload1
+    );
+
+    // Mutated payload with same event ID
+    const payload2 = {
+      id: "evt_mutated_hash_conflict",
+      type: "payment.succeeded",
+      data: {
+        providerReference: attempt.providerReference,
+        status: "SUCCEEDED",
+        amountMinor: 8000,
+        currencyCode: "XOF",
+        feeMinor: 80,
+        netMinor: 7920,
+        mutated: true,
+      },
+    };
+    const rawBody2 = Buffer.from(JSON.stringify(payload2));
+    const sig2 = crypto.createHmac("sha256", config.webhookSecret!).update(rawBody2).digest("hex");
+
+    await expect(
+      webhookService.handleWebhook(
+        "mock",
+        config.webhookEndpointKey,
+        { "x-mock-signature": sig2 },
+        rawBody2,
+        payload2
+      )
+    ).rejects.toThrow("Webhook idempotency conflict");
+  });
+
+  // 23. no fake Date.now provider event IDs on unverified webhook
+  it("23. logs security AuditEvent without creating fake Date.now WebhookEvent on unverified webhook with missing eventId", async () => {
+    const config = await prisma.paymentProviderConfig.findUniqueOrThrow({
+      where: { organizationId_provider: { organizationId: "org-diallo", provider: "mock" } },
+    });
+
+    const payloadWithoutId = {
+      data: { status: "FAILED" },
+    };
+    const rawBody = Buffer.from(JSON.stringify(payloadWithoutId));
+
+    await expect(
+      webhookService.handleWebhook(
+        "mock",
+        config.webhookEndpointKey,
+        { "x-mock-signature": "bad_signature_hex_1234" },
+        rawBody,
+        payloadWithoutId
+      )
+    ).rejects.toThrow("Webhook signature verification failed.");
+
+    // Verify NO WebhookEvent was created with unverified_ or fake event ID
+    const fakeEvents = await prisma.webhookEvent.findMany({
+      where: {
+        organizationId: "org-diallo",
+        eventId: { contains: "unverified_" },
+      },
+    });
+    expect(fakeEvents.length).toBe(0);
+
+    // Verify security AuditEvent was recorded
+    const auditEvent = await prisma.auditEvent.findFirst({
+      where: {
+        organizationId: "org-diallo",
+        action: "SECURITY_WEBHOOK_INVALID_SIGNATURE",
+      },
+    });
+    expect(auditEvent).toBeDefined();
+    expect(auditEvent?.resourceId).toBe(config.webhookEndpointKey);
+  });
+
+  // 24. reconciliation status has no MATCHED database default
+  it("24. verifies ReconciliationRecord.status has no default in PostgreSQL database schema", async () => {
+    const cols: any[] = await prisma.$queryRaw`
+      SELECT column_default
+      FROM information_schema.columns
+      WHERE table_name = 'ReconciliationRecord'
+        AND column_name = 'status'
+    `;
+    expect(cols.length).toBe(1);
+    expect(cols[0].column_default).toBeNull();
+  });
 });
+

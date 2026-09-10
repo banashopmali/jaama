@@ -388,20 +388,22 @@ model SaleLine {
 }
 
 model Payment {
-  id             String              @id @default(uuid())
-  organizationId String
-  organization   Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
-  saleId         String
-  sale           Sale                @relation(fields: [organizationId, saleId], references: [organizationId, id], onDelete: Cascade)
-  method         PaymentMethod
-  amountMinor    Int
-  status         PaymentRecordStatus @default(SUCCESS)
-  recordedAt     DateTime            @default(now())
+  id                     String              @id @default(uuid())
+  organizationId         String
+  organization           Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  saleId                 String
+  sale                   Sale                @relation(fields: [organizationId, saleId], references: [organizationId, id], onDelete: Cascade)
+  method                 PaymentMethod
+  amountMinor            Int
+  status                 PaymentRecordStatus @default(SUCCESS)
+  sourcePaymentAttemptId String?
+  recordedAt             DateTime            @default(now())
 
   reconciliationRecords ReconciliationRecord[]
   paymentAttempt        PaymentAttempt?
 
   @@unique([organizationId, id])
+  @@unique([organizationId, sourcePaymentAttemptId])
   @@index([organizationId, saleId])
 }
 
@@ -824,7 +826,7 @@ model ReconciliationRecord {
   payment               Payment?                    @relation(fields: [organizationId, paymentId], references: [organizationId, id], onDelete: SetNull)
   settlementId          String?
   settlement            Settlement?                 @relation(fields: [organizationId, settlementId], references: [organizationId, id], onDelete: SetNull)
-  status                PaymentReconciliationStatus @default(MATCHED)
+  status                PaymentReconciliationStatus
   discrepancyType       String?
   detailsJson           String                      @default("{}")
   createdAt             DateTime                    @default(now())
@@ -837,12 +839,13 @@ model ReconciliationRecord {
 
 model WebhookEvent {
   id                String              @id @default(uuid())
-  organizationId    String?
-  organization      Organization?       @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  organizationId    String
+  organization      Organization        @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   provider          PaymentProviderType
   eventId           String
   eventType         String
   payloadJson       String
+  payloadHash       String
   headersJson       String              @default("{}")
   signatureVerified Boolean             @default(false)
   status            WebhookEventStatus  @default(RECEIVED)
@@ -850,7 +853,7 @@ model WebhookEvent {
   errorMessage      String?
   createdAt         DateTime            @default(now())
 
-  @@unique([provider, eventId])
+  @@unique([organizationId, provider, eventId])
   @@index([organizationId, status])
   @@index([status, createdAt])
 }

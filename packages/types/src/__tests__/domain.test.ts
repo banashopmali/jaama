@@ -19,6 +19,7 @@ import {
   assertValidSettlementTransition,
   PaymentDomainError,
   assertSafeIntegerAmount,
+  validateProviderAttemptResult,
 } from "../index";
 
 describe("JAAMA Domain & Business Contracts (JAA-S0-07)", () => {
@@ -218,6 +219,61 @@ describe("JAAMA Domain & Business Contracts (JAA-S0-07)", () => {
       expect(() => assertSafeIntegerAmount(-10, "amount", 0)).toThrow(PaymentDomainError);
       expect(() => assertSafeIntegerAmount(1500, "amount", 0, 1000)).toThrow(PaymentDomainError);
       expect(() => assertSafeIntegerAmount("5000", "amount")).toThrow(PaymentDomainError);
+    });
+
+    it("validates provider attempt financial result integrity with validateProviderAttemptResult", () => {
+      const validAttempt = { amountMinor: 10000 };
+
+      // Valid results
+      expect(() =>
+        validateProviderAttemptResult(
+          { state: "SUCCEEDED", providerReference: "ref1", providerStatus: "DONE", feeMinor: 100, netMinor: 9900 },
+          validAttempt
+        )
+      ).not.toThrow();
+
+      expect(() =>
+        validateProviderAttemptResult(
+          { state: "PENDING_PROVIDER", providerReference: "ref2", providerStatus: "WAIT" },
+          validAttempt
+        )
+      ).not.toThrow();
+
+      // Reject non-object or null
+      expect(() => validateProviderAttemptResult(null, validAttempt)).toThrow(PaymentDomainError);
+      expect(() => validateProviderAttemptResult("not an object", validAttempt)).toThrow(PaymentDomainError);
+
+      // Reject invalid state
+      expect(() =>
+        validateProviderAttemptResult(
+          { state: "UNKNOWN_STATE", providerReference: "ref" },
+          validAttempt
+        )
+      ).toThrow(PaymentDomainError);
+
+      // Reject fee + net != amountMinor
+      expect(() =>
+        validateProviderAttemptResult(
+          { state: "SUCCEEDED", feeMinor: 200, netMinor: 9000 },
+          validAttempt
+        )
+      ).toThrow("feeMinor (200) + netMinor (9000) != attempt.amountMinor (10000)");
+
+      // Reject negative fee
+      expect(() =>
+        validateProviderAttemptResult(
+          { state: "SUCCEEDED", feeMinor: -50, netMinor: 10050 },
+          validAttempt
+        )
+      ).toThrow(PaymentDomainError);
+
+      // Reject fractional fee
+      expect(() =>
+        validateProviderAttemptResult(
+          { state: "SUCCEEDED", feeMinor: 10.5, netMinor: 9989.5 },
+          validAttempt
+        )
+      ).toThrow(PaymentDomainError);
     });
   });
 });

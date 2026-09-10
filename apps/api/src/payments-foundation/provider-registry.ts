@@ -87,18 +87,33 @@ export class PaymentProviderResolver {
 
     // In controlled test environments only, auto-provision sandboxed config if none exists
     if (!config && providerType === "mock" && process.env.NODE_ENV === "test") {
-      config = await this.prismaClient.paymentProviderConfig.create({
-        data: {
-          organizationId,
-          provider: "mock",
-          isEnabled: true,
-          isTestMode: true,
-          webhookEndpointKey: crypto.randomUUID(),
-          webhookSecret: crypto.randomBytes(24).toString("hex"),
-          merchantId: `mock_merchant_${organizationId}`,
-          metadataJson: JSON.stringify({ autoCreated: true, environment: "test" }),
-        },
-      });
+      try {
+        config = await this.prismaClient.paymentProviderConfig.create({
+          data: {
+            organizationId,
+            provider: "mock",
+            isEnabled: true,
+            isTestMode: true,
+            webhookEndpointKey: crypto.randomUUID(),
+            webhookSecret: crypto.randomBytes(24).toString("hex"),
+            merchantId: `mock_merchant_${organizationId}`,
+            metadataJson: JSON.stringify({ autoCreated: true, environment: "test" }),
+          },
+        });
+      } catch (e: any) {
+        if (e.code === "P2002") {
+          config = await this.prismaClient.paymentProviderConfig.findUnique({
+            where: {
+              organizationId_provider: {
+                organizationId,
+                provider: providerType,
+              },
+            },
+          });
+        } else {
+          throw e;
+        }
+      }
     }
 
     if (!config || !config.isEnabled) {

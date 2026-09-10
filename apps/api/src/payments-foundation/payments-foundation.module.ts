@@ -6,11 +6,14 @@ import { SettlementService } from "./settlement.service";
 import { PaymentsFoundationController } from "./payments-foundation.controller";
 import { PaymentWebhooksController } from "./payment-webhooks.controller";
 
+import { PaymentFinalizationService } from "./payment-finalization.service";
+
 @Module({
   controllers: [PaymentsFoundationController, PaymentWebhooksController],
   providers: [
     PaymentProviderRegistry,
     PaymentProviderResolver,
+    PaymentFinalizationService,
     PaymentIntentService,
     WebhookEventService,
     SettlementService,
@@ -18,6 +21,7 @@ import { PaymentWebhooksController } from "./payment-webhooks.controller";
   exports: [
     PaymentProviderRegistry,
     PaymentProviderResolver,
+    PaymentFinalizationService,
     PaymentIntentService,
     WebhookEventService,
     SettlementService,

@@ -29,4 +29,5 @@ export {
   assertValidPaymentAttemptTransition,
   isValidSettlementTransition,
   assertValidSettlementTransition,
+  validateProviderAttemptResult,
 } from "@jaama/types";
