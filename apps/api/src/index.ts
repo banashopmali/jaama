@@ -49,3 +49,5 @@ export * from "./common/global-exception.filter";
 export * from "./common/correlation.middleware";
 export * from "./common/canonical-hash";
 export * from "./common/sequence.service";
+export * from "./payments-foundation";
+

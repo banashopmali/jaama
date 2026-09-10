@@ -30,7 +30,6 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let code = "INTERNAL_SERVER_ERROR";
     let message = "Une erreur interne est survenue.";
 
-    // Known safe HTTP exceptions
     if (exception instanceof HttpException) {
       status = exception.getStatus();
       const res: any = exception.getResponse();
@@ -56,6 +55,37 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         }
       } else {
         code = typeof res === "object" && res.error ? String(res.error).toUpperCase().replace(/\s+/g, "_") : "HTTP_ERROR";
+      }
+    } else if (
+      (exception as any)?.name === "PaymentDomainError" ||
+      ((exception as any)?.code && [
+        "INVALID_STATE_TRANSITION",
+        "PROVIDER_NOT_CONFIGURED",
+        "PROVIDER_UNAVAILABLE",
+        "INVALID_SIGNATURE",
+        "IDEMPOTENCY_CONFLICT",
+        "AMOUNT_MISMATCH",
+        "CURRENCY_MISMATCH",
+        "PAYMENT_INTENT_EXPIRED",
+        "PAYMENT_INTENT_ALREADY_PAID",
+        "TENANT_MISMATCH",
+        "UNAUTHORIZED_PROVIDER_ACTION",
+        "PROVIDER_ERROR",
+      ].includes((exception as any)?.code))
+    ) {
+      const pde = exception as any;
+      code = pde.code || "PAYMENT_DOMAIN_ERROR";
+      message = pde.message || "Payment domain error";
+      if (code === "IDEMPOTENCY_CONFLICT") {
+        status = HttpStatus.CONFLICT;
+      } else if (code === "INVALID_SIGNATURE") {
+        status = HttpStatus.UNAUTHORIZED;
+      } else if (code === "UNAUTHORIZED_PROVIDER_ACTION") {
+        status = HttpStatus.FORBIDDEN;
+      } else if (code === "TENANT_MISMATCH") {
+        status = HttpStatus.NOT_FOUND;
+      } else {
+        status = HttpStatus.BAD_REQUEST;
       }
     } else if (exception instanceof Error) {
       const errMsg = exception.message || "";
